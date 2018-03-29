@@ -2,7 +2,6 @@ package node
 
 import (
 	"errors"
-	"fmt"
 	"unsafe"
 )
 
@@ -36,8 +35,17 @@ func Serialize(n *Node) []byte {
 	// has to be a better way to do this?
 	edges := *(*[2048]byte)(unsafe.Pointer(&n.edges))
 	for i := 1; i < 2049; i++ {
-		fmt.Println(edges[i-1])
 		data[i] = edges[i-1]
+	}
+
+	offset := *(*[8]byte)(unsafe.Pointer(&n.offset))
+	for i := 4080; i < 4088; i++ {
+		data[i] = offset[i-4080]
+	}
+
+	size := *(*[8]byte)(unsafe.Pointer(&n.size))
+	for i := 4088; i < 4096; i++ {
+		data[i] = size[i-4088]
 	}
 
 	return data
@@ -45,11 +53,10 @@ func Serialize(n *Node) []byte {
 
 // Deserialize : deserialize from a byteslice to a Node
 func Deserialize(data []byte) *Node {
-	n := &Node{
+	return &Node{
 		isLeaf: *(*uint8)(unsafe.Pointer(&data[0])),
 		edges:  *(*[256]uint64)(unsafe.Pointer(&data[1])),
-		offset: *(*uint64)(unsafe.Pointer(&data[2049])),
-		size:   *(*uint64)(unsafe.Pointer(&data[2113])),
+		offset: *(*uint64)(unsafe.Pointer(&data[4080])),
+		size:   *(*uint64)(unsafe.Pointer(&data[4088])),
 	}
-	return n
 }
