@@ -18,8 +18,8 @@ func TestSerialize(t *testing.T) {
 	data := Serialize(&node)
 
 	assert.Len(t, data, 4096)
-	assert.Equal(t, uint8(1), uint8(data[0]))
-	assert.Equal(t, uint8(1), uint8(data[0]))
+	assert.Equal(t, int8(1), int8(data[0]))
+	assert.Equal(t, int8(1), int8(data[0]))
 }
 
 func TestDeserialize(t *testing.T) {
@@ -28,7 +28,11 @@ func TestDeserialize(t *testing.T) {
 	node := Deserialize(data)
 
 	assert.Equal(t, uint8(1), node.isLeaf)
-	assert.Equal(t, uint64(102400), node.offset)
-	assert.Equal(t, uint64(4096), node.size)
-	assert.Equal(t, uint64(104), node.Next([]byte("h")[0]))
+	assert.Equal(t, int64(102400), node.offset)
+	assert.Equal(t, int64(4096), node.size)
+	assert.Equal(t, int64(104), node.Next([]byte("h")[0]))
+}
+
+func TestNext(t *testing.T) {
+
 }

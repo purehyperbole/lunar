@@ -12,6 +12,8 @@ const (
 	MinStep = 1 << 16 // 64 kb
 	// MaxStep : the largest increment that the table can grow
 	MaxStep = 1 << 30 // 1 GB
+	// MaxTableSize : maximum size of table
+	MaxTableSize = 0x7FFFFFFFFFFFFFFF
 )
 
 var (
@@ -21,6 +23,7 @@ var (
 
 // Table : mmaped file
 type Table struct {
+	free    *FreeList
 	fd      *os.File
 	mapping []byte
 }
@@ -28,6 +31,7 @@ type Table struct {
 // New : loads a new table
 func New(path string) (*Table, error) {
 	t := Table{
+		free:    NewFreeList(MaxTableSize),
 		mapping: make([]byte, 0),
 	}
 

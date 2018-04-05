@@ -32,6 +32,6 @@ func testBuildBytes() []byte {
 
 func testBuildNode(n *Node) {
 	for i := 0; i < 255; i++ {
-		n.edges[i] = uint64(i)
+		n.edges[i] = int64(i)
 	}
 }
