@@ -85,7 +85,7 @@ func (t *Table) mmap() error {
 
 	size := t.size()
 
-	if size == 0 {
+	if size < int64(os.Getpagesize()) {
 		size = t.sizeincrement(size)
 		t.resize(size)
 	}
