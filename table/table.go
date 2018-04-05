@@ -23,7 +23,7 @@ var (
 
 // Table : mmaped file
 type Table struct {
-	free    *FreeList
+	Free    *FreeList
 	fd      *os.File
 	mapping []byte
 }
@@ -31,7 +31,7 @@ type Table struct {
 // New : loads a new table
 func New(path string) (*Table, error) {
 	t := Table{
-		free:    NewFreeList(MaxTableSize),
+		Free:    NewFreeList(MaxTableSize),
 		mapping: make([]byte, 0),
 	}
 

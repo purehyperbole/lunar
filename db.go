@@ -1,6 +1,6 @@
 package lunar
 
-import "github.com/dgraph-io/badger/table"
+import "github.com/purehyperbole/lunar/table"
 
 // DB : Database
 type DB struct {

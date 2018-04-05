@@ -2,7 +2,6 @@ package radix
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/purehyperbole/lunar/node"
 	"github.com/purehyperbole/lunar/table"
@@ -39,6 +38,7 @@ func (r *Radix) Lookup(key []byte) (*node.Node, error) {
 
 	for i := 0; i < len(key); i++ {
 		next := n.Next(key[i])
+
 		if next == 0 {
 			return nil, ErrNotFound
 		}
@@ -67,8 +67,6 @@ func (r *Radix) Add(key []byte, size, offset int64) error {
 		var ndata []byte
 
 		if n.Next(key[i]) == 0 {
-			fmt.Printf("didnt find character: %s\n", string(key[i]))
-			fmt.Println(next)
 			n, next, err = r.createnode(n, next, key[i])
 			if err != nil {
 				return err
@@ -80,7 +78,7 @@ func (r *Radix) Add(key []byte, size, offset int64) error {
 
 		next = n.Next(key[i])
 
-		ndata, err = r.t.Read(offset, node.NodeSize)
+		ndata, err = r.t.Read(next, node.NodeSize)
 		if err != nil {
 			return err
 		}
@@ -143,15 +141,8 @@ func (r *Radix) createnode(cn *node.Node, ci int64, c byte) (*node.Node, int64, 
 
 	// update current node with offset to new node
 	cn.SetNext(c, next)
-	fmt.Println(cn.Next(c))
+
 	ndata = node.Serialize(cn)
-	err = r.t.Write(ndata, ci)
-	if err != nil {
-		return nil, 0, err
-	}
 
-	fmt.Printf("current: %d\n", ci)
-	fmt.Printf("next: %d\n", next)
-
-	return n, next, nil
+	return n, next, r.t.Write(ndata, ci)
 }

@@ -54,6 +54,25 @@ func (n *Node) Offset() int64 {
 	return n.offset
 }
 
+// SetLeaf : returns true if node has associated data
+func (n *Node) SetLeaf(leaf bool) {
+	if leaf {
+		n.isLeaf = 1
+	} else {
+		n.isLeaf = 0
+	}
+}
+
+// SetSize : sets size of associated node data
+func (n *Node) SetSize(size int64) {
+	n.size = size
+}
+
+// SetOffset : sets offset index of associated node data
+func (n *Node) SetOffset(offset int64) {
+	n.offset = offset
+}
+
 // Serialize : serialize a node to a byteslice
 func Serialize(n *Node) []byte {
 	data := make([]byte, 4096)

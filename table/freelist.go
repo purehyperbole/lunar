@@ -67,3 +67,8 @@ func (f *FreeList) Release(size, offset int64) {
 
 	(*current) = a
 }
+
+// Empty : returns true if no space has been allocated
+func (f *FreeList) Empty() bool {
+	return f.root.offset == 0 && f.root.next == nil
+}
