@@ -17,9 +17,7 @@ func testBuildBytes() []byte {
 		scratch = append(scratch, testuint64tobytes(&x)...)
 	}
 
-	for i := 0; i < len(scratch); i++ {
-		data[i+1] = scratch[i]
-	}
+	copy(data[1:], scratch[:])
 
 	var scratch2 []byte
 	o := uint64(102400)
@@ -27,9 +25,7 @@ func testBuildBytes() []byte {
 	scratch2 = append(scratch2, (*[8]byte)(unsafe.Pointer(&o))[:]...)
 	scratch2 = append(scratch2, (*[8]byte)(unsafe.Pointer(&s))[:]...)
 
-	for i := 0; i < 16; i++ {
-		data[i+4080] = scratch2[i]
-	}
+	copy(data[4080:], scratch2[:])
 
 	return data
 }

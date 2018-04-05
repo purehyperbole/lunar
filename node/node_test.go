@@ -30,5 +30,5 @@ func TestDeserialize(t *testing.T) {
 	assert.Equal(t, uint8(1), node.isLeaf)
 	assert.Equal(t, uint64(102400), node.offset)
 	assert.Equal(t, uint64(4096), node.size)
-	assert.Equal(t, uint64(104), node.NextIndex([]byte("h")[0]))
+	assert.Equal(t, uint64(104), node.Next([]byte("h")[0]))
 }
