@@ -2,12 +2,13 @@ package table
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"syscall"
 )
 
 const (
+	// PageSize : page size
+	PageSize = 1 << 12 // 4kb
 	// MinStep : the smallest increment that the table can grow
 	MinStep = 1 << 16 // 64 kb
 	// MaxStep : the largest increment that the table can grow
@@ -19,6 +20,8 @@ const (
 var (
 	// ErrBoundsViolation : the specified segment of memory does not exist
 	ErrBoundsViolation = errors.New("specified offset and size exceeds size of mapping")
+	// ErrDataSizeTooLarge : the provided value data exceeds the maximum size limit
+	ErrDataSizeTooLarge = errors.New("data exceeds maximum limit")
 )
 
 // Table : mmaped file
@@ -54,6 +57,10 @@ func (t *Table) Read(offset int64, size int64) ([]byte, error) {
 
 // Write : writes to table at a given offset
 func (t *Table) Write(data []byte, offset int64) error {
+	if len(data) > MaxStep {
+		return ErrDataSizeTooLarge
+	}
+
 	if (int64(len(t.mapping)) - offset) < int64(len(data)) {
 		err := t.resize(int64(len(data)))
 		if err != nil {
@@ -87,11 +94,11 @@ func (t *Table) open(path string) error {
 func (t *Table) mmap() error {
 	var err error
 
-	size := t.size()
+	size := t.Size()
 
-	if size < int64(os.Getpagesize()) {
-		size = t.sizeincrement()
+	if size < PageSize {
 		t.resize(size)
+		size = t.Size()
 	}
 
 	t.mapping, err = syscall.Mmap(int(t.fd.Fd()), 0, int(size), syscall.PROT_WRITE|syscall.PROT_READ, syscall.MAP_SHARED)
@@ -104,9 +111,7 @@ func (t *Table) munmap() error {
 }
 
 func (t *Table) resize(size int64) error {
-	size = t.sizeincrement()
-
-	err := t.fd.Truncate(t.size() + int64(size))
+	err := t.fd.Truncate(t.growadvise(size))
 	if err != nil {
 		return err
 	}
@@ -124,7 +129,8 @@ func (t *Table) resize(size int64) error {
 	return t.mmap()
 }
 
-func (t *Table) size() int64 {
+// Size : Returns size in bytes
+func (t *Table) Size() int64 {
 	stat, err := t.fd.Stat()
 	if err != nil {
 		return int64(0)
@@ -133,21 +139,18 @@ func (t *Table) size() int64 {
 	return stat.Size()
 }
 
-func (t *Table) sizeincrement() int64 {
-	size := t.size() * 2
+func (t *Table) growadvise(size int64) int64 {
+	if size < t.Size() {
+		size = t.Size() * 2
+	}
 
 	if size < MinStep {
-		size = MinStep
+		return t.Size() + MinStep
 	}
 
 	if size > MaxStep {
-		size = MaxStep
+		return t.Size() + MaxStep
 	}
 
-	if int(size)%os.Getpagesize() != 0 {
-		fmt.Println(os.Getpagesize())
-		fmt.Println("SIZE IS NOT A MULTIPLE OF PAGESIZE")
-	}
-
-	return size
+	return size + size%PageSize
 }

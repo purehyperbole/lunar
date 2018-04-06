@@ -99,6 +99,16 @@ func (r *Radix) Add(key []byte, size, offset int64) error {
 	return nil
 }
 
+// Close : close the underlying table
+func (r *Radix) Close() {
+	r.t.Close()
+}
+
+// Nodes : the amount of allocated nodes
+func (r *Radix) Nodes() int {
+	return r.nodes
+}
+
 func (r *Radix) root() (*node.Node, error) {
 	// create root node if it doesn't exist
 	if r.t.Free.Empty() {

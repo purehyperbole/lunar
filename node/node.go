@@ -39,6 +39,22 @@ func (n *Node) SetNext(b byte, index int64) {
 	n.edges[int(b)] = index
 }
 
+// Empty : returns true if there is no data associated with this node
+func (n *Node) Empty() bool {
+	// may be faster to assign information on write rather than looping
+	if n.size != 0 || n.offset != 0 {
+		return false
+	}
+
+	for i := 0; i < len(n.edges); i++ {
+		if i != 0 {
+			return false
+		}
+	}
+
+	return true
+}
+
 // Leaf : returns true if node has associated data
 func (n *Node) Leaf() bool {
 	return n.isLeaf == 1

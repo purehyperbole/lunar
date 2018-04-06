@@ -53,8 +53,14 @@ func (f *FreeList) Reserve(size int64) (int64, error) {
 func (f *FreeList) Release(size, offset int64) {
 	current := f.root
 
+	// may need to improve this if free space that overlaps multiple regions
 	for current.offset < offset {
 		current = current.next
+	}
+
+	if current.offset == size+offset {
+		current.offset = current.offset - size
+		return
 	}
 
 	prev := (*current)
@@ -71,4 +77,8 @@ func (f *FreeList) Release(size, offset int64) {
 // Empty : returns true if no space has been allocated
 func (f *FreeList) Empty() bool {
 	return f.root.offset == 0 && f.root.next == nil
+}
+
+func overlaps(a *alloc, size, offset int64) bool {
+	return true
 }

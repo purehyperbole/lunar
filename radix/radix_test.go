@@ -1,7 +1,6 @@
 package radix
 
 import (
-	"fmt"
 	"os"
 	"testing"
 
@@ -22,8 +21,6 @@ func TestRadixAddAndLookup(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, int64(0), n.Offset())
 	assert.Equal(t, int64(1024), n.Size())
-
-	fmt.Println("---------------------------")
 
 	err = r.Add([]byte("test5678"), 1024, 0)
 	assert.Nil(t, err)
