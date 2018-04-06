@@ -90,7 +90,7 @@ func (t *Table) mmap() error {
 	size := t.size()
 
 	if size < int64(os.Getpagesize()) {
-		size = t.sizeincrement(size)
+		size = t.sizeincrement()
 		t.resize(size)
 	}
 
@@ -104,7 +104,7 @@ func (t *Table) munmap() error {
 }
 
 func (t *Table) resize(size int64) error {
-	size = t.sizeincrement(size)
+	size = t.sizeincrement()
 
 	err := t.fd.Truncate(t.size() + int64(size))
 	if err != nil {
@@ -133,8 +133,8 @@ func (t *Table) size() int64 {
 	return stat.Size()
 }
 
-func (t *Table) sizeincrement(size int64) int64 {
-	size = size * 2
+func (t *Table) sizeincrement() int64 {
+	size := t.size() * 2
 
 	if size < MinStep {
 		size = MinStep
