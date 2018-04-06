@@ -55,7 +55,7 @@ func (t *Table) Read(offset int64, size int64) ([]byte, error) {
 // Write : writes to table at a given offset
 func (t *Table) Write(data []byte, offset int64) error {
 	if (int64(len(t.mapping)) - offset) < int64(len(data)) {
-		err := t.resize(int64(len(t.mapping)))
+		err := t.resize(int64(len(data)))
 		if err != nil {
 			return err
 		}
@@ -106,12 +106,22 @@ func (t *Table) munmap() error {
 func (t *Table) resize(size int64) error {
 	size = t.sizeincrement(size)
 
-	err := t.fd.Truncate(int64(size))
+	err := t.fd.Truncate(t.size() + int64(size))
 	if err != nil {
 		return err
 	}
 
-	return t.fd.Sync()
+	err = t.fd.Sync()
+	if err != nil {
+		return err
+	}
+
+	err = t.munmap()
+	if err != nil {
+		return err
+	}
+
+	return t.mmap()
 }
 
 func (t *Table) size() int64 {
