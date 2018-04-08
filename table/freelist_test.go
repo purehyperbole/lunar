@@ -1,7 +1,6 @@
 package table
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -67,6 +66,41 @@ func TestFreeListFreagmentation(t *testing.T) {
 	assert.Equal(t, int64(0), f.root.offset)
 }
 
+func TestFreeListAllocation(t *testing.T) {
+	f := NewFreeList(1 << 30)
+
+	// single allocaton
+	err := f.Allocate(4096, 10240)
+	assert.Nil(t, err)
+
+	assert.Equal(t, int64(0), f.root.offset)
+	assert.Equal(t, int64(10240), f.root.size)
+	assert.Equal(t, int64(14336), f.root.next.offset)
+	assert.Equal(t, int64(1<<30-14336), f.root.next.size)
+
+	// allocate between two spaces
+	err = f.Allocate(4096, 4194304)
+	assert.Nil(t, err)
+
+	assert.Equal(t, int64(0), f.root.offset)
+	assert.Equal(t, int64(10240), f.root.size)
+	assert.Equal(t, int64(14336), f.root.next.offset)
+	assert.Equal(t, int64(4179968), f.root.next.size)
+	assert.Equal(t, int64(4198400), f.root.next.next.offset)
+	assert.Equal(t, int64(1069529088), f.root.next.next.size)
+
+	// allocate two sections next to eachother
+	err = f.Allocate(4096, 14336)
+	assert.Nil(t, err)
+	assert.Equal(t, int64(0), f.root.offset)
+	assert.Equal(t, int64(10240), f.root.size)
+	assert.Equal(t, int64(18432), f.root.next.offset)
+	assert.Equal(t, int64(4175872), f.root.next.size)
+	assert.Equal(t, int64(4198400), f.root.next.next.offset)
+	assert.Equal(t, int64(1069529088), f.root.next.next.size)
+}
+
+/*
 func TestFreeListFreagmentation2(t *testing.T) {
 	f := NewFreeList(1 << 30)
 
@@ -93,3 +127,4 @@ func TestFreeListFreagmentation2(t *testing.T) {
 		links++
 	}
 }
+*/

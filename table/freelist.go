@@ -38,6 +38,7 @@ func (f *FreeList) Reserve(size int64) (int64, error) {
 	for current != nil {
 		if current.size >= size {
 			off := current.offset
+			current.size = current.size - current.offset + size
 			current.offset = current.offset + size
 
 			return off, nil
@@ -49,16 +50,50 @@ func (f *FreeList) Reserve(size int64) (int64, error) {
 	return -1, ErrNoFreeSpace
 }
 
+// Allocate : allocates a specified region as reserved
+func (f *FreeList) Allocate(size, offset int64) error {
+	current := f.root
+
+	for current.offset+current.size <= offset {
+		current = current.next
+	}
+
+	if current.offset == offset {
+		current.offset = current.offset + size
+		current.size = current.size - size
+		return nil
+	}
+
+	next := (*current)
+
+	a := alloc{
+		size:   offset - next.offset,
+		offset: next.offset,
+		next:   &next,
+	}
+
+	next.offset = offset + size
+	next.size = next.size - (offset + size)
+
+	(*current) = a
+
+	return nil
+}
+
 // Release : releases reserved space so it can be reused
 func (f *FreeList) Release(size, offset int64) {
 	current := f.root
 
 	// may need to improve this if free space that overlaps multiple regions
 	for current.offset < offset {
+		if current.next == nil {
+			return
+		}
 		current = current.next
 	}
 
 	if current.offset == size+offset {
+		current.size = current.size + size + offset
 		current.offset = current.offset - size
 		return
 	}
