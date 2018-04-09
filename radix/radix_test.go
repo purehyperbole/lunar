@@ -4,12 +4,22 @@ import (
 	"os"
 	"testing"
 
+	"github.com/purehyperbole/lunar/table"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestRadixAddAndLookup(t *testing.T) {
-	r, err := New("test.index")
+	tbl, err := table.New("test.index")
+	assert.Nil(t, err)
+	assert.NotNil(t, tbl)
 
+	// clean file
+	defer func() {
+		tbl.Close()
+		os.Remove("test.index")
+	}()
+
+	r, err := New(tbl)
 	assert.Nil(t, err)
 	assert.NotNil(t, r)
 
@@ -26,7 +36,4 @@ func TestRadixAddAndLookup(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, 12, r.nodes)
 
-	// clean file
-	r.t.Close()
-	os.Remove("test.index")
 }

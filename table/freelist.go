@@ -38,7 +38,7 @@ func (f *FreeList) Reserve(size int64) (int64, error) {
 	for current != nil {
 		if current.size >= size {
 			off := current.offset
-			current.size = current.size - current.offset + size
+			current.size = current.size - size
 			current.offset = current.offset + size
 
 			return off, nil

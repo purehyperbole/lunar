@@ -19,13 +19,8 @@ type Radix struct {
 }
 
 // New : creates a new radix tree backed by a persistent table
-func New(path string) (*Radix, error) {
-	t, err := table.New(path)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Radix{t, 0}, nil
+func New(table *table.Table) (*Radix, error) {
+	return &Radix{table, 0}, nil
 }
 
 // Lookup : returns the index and size for a particular key
