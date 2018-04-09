@@ -47,7 +47,7 @@ func New(path string) (*Table, error) {
 }
 
 // Read : reads from table at a given offset
-func (t *Table) Read(offset int64, size int64) ([]byte, error) {
+func (t *Table) Read(size, offset int64) ([]byte, error) {
 	if int64(len(t.mapping)) < (offset + size) {
 		return nil, ErrBoundsViolation
 	}

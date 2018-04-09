@@ -49,7 +49,7 @@ func TestRead(t *testing.T) {
 	err = db.Write(data, 0)
 	assert.Nil(t, err)
 
-	comparison, err := db.Read(0, int64(len(data)))
+	comparison, err := db.Read(int64(len(data)), 0)
 	assert.Nil(t, err)
 	assert.Equal(t, data, comparison)
 

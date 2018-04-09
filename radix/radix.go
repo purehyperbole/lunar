@@ -19,38 +19,47 @@ type Radix struct {
 }
 
 // New : creates a new radix tree backed by a persistent table
-func New(table *table.Table) (*Radix, error) {
-	return &Radix{table, 0}, nil
+func New(table *table.Table) *Radix {
+	return &Radix{table, 0}
 }
 
 // Lookup : returns the index and size for a particular key
 // if the key isn't found, an error will be returned
 func (r *Radix) Lookup(key []byte) (*node.Node, error) {
+	n, _, err := r.LookupWithOffset(key)
+	return n, err
+}
+
+// LookupWithOffset : returns the index and size for a particular key
+// if the key isn't found, an error will be returned
+func (r *Radix) LookupWithOffset(key []byte) (*node.Node, int64, error) {
+	var next int64
+
 	n, err := r.root()
 	if err != nil {
-		return nil, err
+		return nil, -1, err
 	}
 
 	for i := 0; i < len(key); i++ {
-		next := n.Next(key[i])
+		next = n.Next(key[i])
 
 		if next == 0 {
-			return nil, ErrNotFound
+			return nil, -1, ErrNotFound
 		}
 
-		ndata, err := r.t.Read(next, node.NodeSize)
+		ndata, err := r.t.Read(node.NodeSize, next)
 		if err != nil {
-			return nil, err
+			return nil, -1, err
 		}
 
 		n = node.Deserialize(ndata)
 	}
 
-	return n, nil
+	return n, next, nil
 }
 
-// Add : adds a key to the radix tree
-func (r *Radix) Add(key []byte, size, offset int64) error {
+// Insert : adds a key to the radix tree
+func (r *Radix) Insert(key []byte, size, offset int64) error {
 	var next int64
 
 	n, err := r.root()
@@ -73,7 +82,7 @@ func (r *Radix) Add(key []byte, size, offset int64) error {
 
 		next = n.Next(key[i])
 
-		ndata, err = r.t.Read(next, node.NodeSize)
+		ndata, err = r.t.Read(node.NodeSize, next)
 		if err != nil {
 			return err
 		}
@@ -86,12 +95,20 @@ func (r *Radix) Add(key []byte, size, offset int64) error {
 
 	ndata := node.Serialize(n)
 
-	err = r.t.Write(ndata, next)
-	if err != nil {
-		return err
-	}
+	return r.t.Write(ndata, next)
+}
 
-	return nil
+// Modify : overwrites a node at a given offset
+func (r *Radix) Modify(n *node.Node, offset int64) error {
+	ndata := node.Serialize(n)
+
+	return r.t.Write(ndata, offset)
+}
+
+// Delete : delete a key from the radix tree
+// returns the size and offset of freed space
+func (r *Radix) Delete(key []byte) (int64, int64, error) {
+	return -1, -1, nil
 }
 
 // Close : close the underlying table
@@ -118,7 +135,7 @@ func (r *Radix) root() (*node.Node, error) {
 		return n, r.t.Write(ndata, int64(len(ndata)))
 	}
 
-	ndata, err := r.t.Read(0, node.NodeSize)
+	ndata, err := r.t.Read(node.NodeSize, 0)
 	if err != nil {
 		return nil, err
 	}

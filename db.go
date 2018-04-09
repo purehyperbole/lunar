@@ -1,17 +1,14 @@
 package lunar
 
 import (
-	"errors"
-	"fmt"
-	"os"
-
 	"github.com/purehyperbole/lunar/node"
+	"github.com/purehyperbole/lunar/radix"
 	"github.com/purehyperbole/lunar/table"
 )
 
 // DB : Database
 type DB struct {
-	index *table.Table
+	index *radix.Radix
 	data  *table.Table
 }
 
@@ -25,81 +22,74 @@ func Open(path string) (*DB, error) {
 	}
 
 	return &DB{
-		index: idxt,
+		index: radix.New(idxt),
 		data:  dbt,
 	}, nil
 }
 
 // Get : get an item by key
 func (db *DB) Get(key string) ([]byte, error) {
-	return nil, nil
+	k := []byte(key)
+
+	n, err := db.index.Lookup(k)
+	if err != nil {
+		return nil, err
+	}
+
+	return db.data.Read(n.Size(), n.Offset())
 }
 
 // Set : set an item by key and value
 func (db *DB) Set(key string, value []byte) error {
-	return nil
+	k := []byte(key)
+
+	n, off, err := db.index.LookupWithOffset(k)
+	if err != nil && err != radix.ErrNotFound {
+		return err
+	}
+
+	if n != nil {
+		return db.update(n, off, k, value)
+	}
+
+	return db.create(k, value)
 }
 
-func setup(indexpath, datapath string) (*table.Table, *table.Table, error) {
-	idxpe := exists(indexpath)
-	datpe := exists(datapath)
+func (db *DB) create(key, value []byte) error {
+	sz := int64(len(value))
 
-	if !idxpe && !datpe {
-		return nil, nil, errors.New("missing index or database file")
-	}
-
-	idxt, err := table.New(indexpath)
+	off, err := db.data.Free.Reserve(sz)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 
-	dbt, err := table.New(datapath)
+	err = db.data.Write(value, off)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 
-	if idxpe {
-		return idxt, dbt, loadfreelists(idxt, dbt)
-	}
-
-	return idxt, dbt, nil
+	return db.index.Insert(key, sz, off)
 }
 
-func loadfreelists(index, data *table.Table) error {
-	nodes := index.Size() / node.NodeSize
+func (db *DB) update(n *node.Node, offset int64, key, value []byte) error {
+	sz := int64(len(value))
 
-	fmt.Printf("nodes: %d\n", nodes)
+	if n.Size() != sz {
+		db.data.Free.Release(n.Size(), n.Offset())
 
-	// Assume all space is allocated, free it later
-	index.Free.Reserve(index.Size())
-
-	// wont work for data :/
-	data.Free.Reserve(data.Size())
-
-	for i := 0; i < int(nodes); i++ {
-		offset := int64(i) * node.NodeSize
-		ndata, err := index.Read(offset, node.NodeSize)
+		off, err := db.data.Free.Reserve(sz)
 		if err != nil {
 			return err
 		}
 
-		n := node.Deserialize(ndata)
-
-		if n.Empty() {
-			index.Free.Release(node.NodeSize, offset)
-		} else {
-			// data.Free.Release
-		}
+		n.SetOffset(off)
+		n.SetSize(sz)
 	}
 
-	return nil
-}
-
-func exists(path string) bool {
-	_, err := os.Stat(path)
-	if err == os.ErrNotExist {
-		return false
+	err := db.data.Write(value, n.Offset())
+	if err != nil {
+		return err
 	}
 
-	return true
+	return db.index.Modify(n, offset)
 }
