@@ -46,13 +46,18 @@ func (n *Node) Empty() bool {
 		return false
 	}
 
+	return !n.Children()
+}
+
+// Children : returns true if the node has associated child edges
+func (n *Node) Children() bool {
 	for i := 0; i < len(n.edges); i++ {
-		if i != 0 {
-			return false
+		if n.edges[i] != 0 {
+			return true
 		}
 	}
 
-	return true
+	return false
 }
 
 // Leaf : returns true if node has associated data

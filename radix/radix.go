@@ -112,8 +112,8 @@ func (r *Radix) Delete(key []byte) (int64, int64, error) {
 }
 
 // Close : close the underlying table
-func (r *Radix) Close() {
-	r.t.Close()
+func (r *Radix) Close() error {
+	return r.t.Close()
 }
 
 // Nodes : the amount of allocated nodes

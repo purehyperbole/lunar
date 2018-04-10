@@ -46,9 +46,10 @@ data, err := db.Get("myKey1234")
 err := db.Set("myKey1234", []byte(`{"status": "ok"}`))
 ```
 
-# Features
+# Features/Wishlist
 
 - [x] Persistence
+- [ ] Sync mmap data on resize
 - [ ] Compressed tree nodes (radix)
 - [ ] Transactions (MVCC)
 - [ ] Data file compaction

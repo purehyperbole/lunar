@@ -27,6 +27,17 @@ func Open(path string) (*DB, error) {
 	}, nil
 }
 
+// Close : unmaps and closes data and index files
+// TODO : implement msync to ensure that data is flushed before closing!
+func (db *DB) Close() error {
+	err := db.index.Close()
+	if err != nil {
+		return err
+	}
+
+	return db.data.Close()
+}
+
 // Get : get an item by key
 func (db *DB) Get(key string) ([]byte, error) {
 	k := []byte(key)
