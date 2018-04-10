@@ -2,7 +2,6 @@ package lunar
 
 import (
 	"errors"
-	"fmt"
 	"os"
 
 	"github.com/purehyperbole/lunar/node"
@@ -35,7 +34,6 @@ func setup(indexpath, datapath string) (*table.Table, *table.Table, error) {
 }
 
 func loadfreelists(index, data *table.Table) error {
-	fmt.Println(index.Size())
 	nodes := index.Size() / node.NodeSize
 
 	for i := 0; i < int(nodes); i++ {

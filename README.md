@@ -14,7 +14,7 @@ To start using lunar, you can run:
 
 # Usage
 
-`Open` will open a database file. This will create a data and accompanying index file if the specified file(s) doesn't exist.
+`Open` will open a database file. This will create a data and accompanying index file if the specified file(s) don't exist.
 
 ```go
 package main

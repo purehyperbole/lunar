@@ -36,6 +36,10 @@ func (db *DB) Get(key string) ([]byte, error) {
 		return nil, err
 	}
 
+	if n.Size() == 0 && n.Offset() == 0 {
+		return nil, radix.ErrNotFound
+	}
+
 	return db.data.Read(n.Size(), n.Offset())
 }
 
