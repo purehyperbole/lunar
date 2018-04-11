@@ -26,36 +26,31 @@ func New(table *table.Table) *Radix {
 // Lookup : returns the index and size for a particular key
 // if the key isn't found, an error will be returned
 func (r *Radix) Lookup(key []byte) (*node.Node, error) {
-	n, _, err := r.LookupWithOffset(key)
-	return n, err
-}
-
-// LookupWithOffset : returns the index and size for a particular key
-// if the key isn't found, an error will be returned
-func (r *Radix) LookupWithOffset(key []byte) (*node.Node, int64, error) {
 	var next int64
 
 	n, err := r.root()
 	if err != nil {
-		return nil, -1, err
+		return nil, err
 	}
 
 	for i := 0; i < len(key); i++ {
 		next = n.Next(key[i])
 
 		if next == 0 {
-			return nil, -1, ErrNotFound
+			return nil, ErrNotFound
 		}
 
 		ndata, err := r.t.Read(node.NodeSize, next)
 		if err != nil {
-			return nil, -1, err
+			return nil, err
 		}
 
 		n = node.Deserialize(ndata)
 	}
 
-	return n, next, nil
+	n.NodeOffset = next
+
+	return n, nil
 }
 
 // Insert : adds a key to the radix tree

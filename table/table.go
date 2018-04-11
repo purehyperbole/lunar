@@ -3,7 +3,9 @@ package table
 import (
 	"errors"
 	"os"
+	"reflect"
 	"syscall"
+	"unsafe"
 )
 
 const (
@@ -75,7 +77,12 @@ func (t *Table) Write(data []byte, offset int64) error {
 
 // Close : close table file descriptor and unmap
 func (t *Table) Close() error {
-	err := t.munmap()
+	err := t.sync()
+	if err != nil {
+		return err
+	}
+
+	err = t.munmap()
 	if err != nil {
 		return err
 	}
@@ -108,6 +115,29 @@ func (t *Table) mmap() error {
 
 func (t *Table) munmap() error {
 	return syscall.Munmap(t.mapping)
+}
+
+func (t *Table) mremap() error {
+	sh := (*reflect.SliceHeader)(unsafe.Pointer(&t.mapping))
+
+	// doesn't work, returns invalid argument. incorrect flags/args?
+	_, _, err := syscall.Syscall(syscall.SYS_MREMAP, sh.Data, uintptr(sh.Len), 0)
+	if err != 0 {
+		return syscall.Errno(err)
+	}
+
+	return nil
+}
+
+func (t *Table) sync() error {
+	sh := (*reflect.SliceHeader)(unsafe.Pointer(&t.mapping))
+
+	_, _, err := syscall.Syscall(syscall.SYS_MSYNC, sh.Data, uintptr(sh.Len), syscall.MS_SYNC)
+	if err != 0 {
+		return syscall.Errno(err)
+	}
+
+	return nil
 }
 
 func (t *Table) resize(size int64) error {

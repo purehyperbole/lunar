@@ -18,10 +18,11 @@ var (
 // Node : radix tree node
 // stores data about a node and its edges.
 type Node struct {
-	isLeaf uint8      // indicates whether this node has an associated value
-	edges  [256]int64 // possile indicies to next child nodes
-	offset int64      // reference to offset of data
-	size   int64      // reference to size of data
+	NodeOffset int64      // not persisted, used to indicate the node offset of the node
+	isLeaf     uint8      // indicates whether this node has an associated value
+	edges      [256]int64 // possile indicies to next child nodes
+	offset     int64      // reference to offset of data
+	size       int64      // reference to size of data
 }
 
 // New : returns a new node

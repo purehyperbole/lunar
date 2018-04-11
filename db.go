@@ -58,13 +58,13 @@ func (db *DB) Get(key string) ([]byte, error) {
 func (db *DB) Set(key string, value []byte) error {
 	k := []byte(key)
 
-	n, off, err := db.index.LookupWithOffset(k)
+	n, err := db.index.Lookup(k)
 	if err != nil && err != radix.ErrNotFound {
 		return err
 	}
 
 	if n != nil {
-		return db.update(n, off, k, value)
+		return db.update(n, k, value)
 	}
 
 	return db.create(k, value)
@@ -86,7 +86,7 @@ func (db *DB) create(key, value []byte) error {
 	return db.index.Insert(key, sz, off)
 }
 
-func (db *DB) update(n *node.Node, offset int64, key, value []byte) error {
+func (db *DB) update(n *node.Node, key, value []byte) error {
 	sz := int64(len(value))
 
 	if n.Size() != sz {
@@ -106,5 +106,5 @@ func (db *DB) update(n *node.Node, offset int64, key, value []byte) error {
 		return err
 	}
 
-	return db.index.Modify(n, offset)
+	return db.index.Modify(n, n.NodeOffset)
 }
