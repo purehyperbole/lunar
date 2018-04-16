@@ -17,12 +17,14 @@ type alloc struct {
 
 // FreeList : linked list implementation to track free space
 type FreeList struct {
-	root *alloc
+	maxsize int64
+	root    *alloc
 }
 
 // NewFreeList : creates a new freelist
 func NewFreeList(maxsize int64) *FreeList {
 	return &FreeList{
+		maxsize: maxsize,
 		root: &alloc{
 			offset: 0,
 			size:   maxsize,
@@ -85,11 +87,12 @@ func (f *FreeList) Release(size, offset int64) {
 	current := f.root
 
 	// may need to improve this if free space that overlaps multiple regions
-	for current.offset < offset {
-		if current.next == nil {
-			return
-		}
+	for current.offset < offset && current != nil {
 		current = current.next
+	}
+
+	if current == nil {
+		return
 	}
 
 	if current.offset == size+offset {
@@ -107,6 +110,23 @@ func (f *FreeList) Release(size, offset int64) {
 	}
 
 	(*current) = a
+}
+
+// Stats : returns the allocated space, and number of allocations
+func (f *FreeList) Stats() (int64, int64) {
+	var free int64
+	var nodes int64
+
+	current := f.root
+	for current != nil {
+		free = free + current.size
+		nodes++
+		current = current.next
+	}
+
+	allocspace := f.maxsize - free
+
+	return allocspace, nodes
 }
 
 // Empty : returns true if no space has been allocated
