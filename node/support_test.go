@@ -10,6 +10,13 @@ func testBuildBytes() []byte {
 	data := make([]byte, 4096)
 
 	data[0] = byte(1)
+	data[1] = byte(8)
+	pfix := []byte("test1234")
+
+	for i := 0; i < len(pfix); i++ {
+		data[2+i] = pfix[i]
+	}
+
 	var scratch []byte
 
 	for i := 0; i < 256; i++ {
@@ -17,7 +24,7 @@ func testBuildBytes() []byte {
 		scratch = append(scratch, testuint64tobytes(&x)...)
 	}
 
-	copy(data[1:], scratch[:])
+	copy(data[130:], scratch[:])
 
 	var scratch2 []byte
 	o := uint64(102400)

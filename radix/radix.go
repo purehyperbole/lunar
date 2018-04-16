@@ -56,6 +56,7 @@ func (r *Radix) Lookup(key []byte) (*node.Node, error) {
 // Insert : adds a key to the radix tree
 func (r *Radix) Insert(key []byte, size, offset int64) error {
 	var next int64
+	var prefix []byte
 
 	n, err := r.root()
 	if err != nil {
@@ -72,7 +73,9 @@ func (r *Radix) Insert(key []byte, size, offset int64) error {
 			}
 
 			r.nodes++
-			continue
+
+			prefix = key[i+1:]
+			break
 		}
 
 		next = n.Next(key[i])
@@ -87,6 +90,7 @@ func (r *Radix) Insert(key []byte, size, offset int64) error {
 
 	n.SetSize(size)
 	n.SetOffset(offset)
+	n.SetPrefix(prefix)
 
 	ndata := node.Serialize(n)
 

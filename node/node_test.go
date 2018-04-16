@@ -9,6 +9,7 @@ import (
 func TestSerialize(t *testing.T) {
 	node := Node{
 		isLeaf: 1,
+		plen:   0,
 		offset: 102400,
 		size:   4096,
 	}
@@ -19,7 +20,7 @@ func TestSerialize(t *testing.T) {
 
 	assert.Len(t, data, 4096)
 	assert.Equal(t, int8(1), int8(data[0]))
-	assert.Equal(t, int8(1), int8(data[0]))
+	assert.Equal(t, int8(0), int8(data[1]))
 }
 
 func TestDeserialize(t *testing.T) {
@@ -28,6 +29,7 @@ func TestDeserialize(t *testing.T) {
 	node := Deserialize(data)
 
 	assert.Equal(t, true, node.Leaf())
+	assert.Equal(t, []byte("test1234"), node.Prefix())
 	assert.Equal(t, int64(102400), node.Offset())
 	assert.Equal(t, int64(4096), node.Size())
 	assert.Equal(t, int64(104), node.Next([]byte("h")[0]))
