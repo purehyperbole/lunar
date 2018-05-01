@@ -49,8 +49,10 @@ err := db.Set("myKey1234", []byte(`{"status": "ok"}`))
 # Features/Wishlist
 
 - [x] Persistence
-- [ ] Sync mmap data on resize
-- [ ] Compressed tree nodes (radix)
+- [x] Compressed tree nodes (radix)
+- [x] Sync mmap data on resize
+- [ ] Split prefixes into multiple nodes if they exceed 128 bytes
+- [ ] Configurable sync on write options
 - [ ] Transactions (MVCC)
 - [ ] Data file compaction
 
