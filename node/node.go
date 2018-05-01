@@ -19,7 +19,7 @@ var (
 // stores data about a node and its edges.
 type Node struct {
 	NodeOffset int64      // not persisted, used to indicate the node offset of the node
-	isLeaf     uint8      // indicates whether this node has an associated value
+	leaf       uint8      // indicates whether this node has an associated value
 	plen       uint8      // prefix length
 	prefix     [128]byte  // key prefix is used when a key has more than one unique character
 	edges      [256]int64 // possile indicies to next child nodes
@@ -30,6 +30,11 @@ type Node struct {
 // New : returns a new node
 func New() *Node {
 	return &Node{}
+}
+
+// Edges : returns all edge offsets to child nodes
+func (n *Node) Edges() [256]int64 {
+	return n.edges
 }
 
 // Next : returns the index of the next radix node by character
@@ -45,7 +50,7 @@ func (n *Node) SetNext(b byte, index int64) {
 // Empty : returns true if there is no data associated with this node
 func (n *Node) Empty() bool {
 	// may be faster to assign information on write rather than looping
-	if n.size != 0 || n.offset != 0 {
+	if n.leaf == 1 {
 		return false
 	}
 
@@ -65,7 +70,7 @@ func (n *Node) Children() bool {
 
 // Leaf : returns true if node has associated data
 func (n *Node) Leaf() bool {
-	return n.isLeaf == 1
+	return n.leaf == 1
 }
 
 // Prefix : returns the node's prefix. returns nil if no prefix is defined
@@ -75,6 +80,16 @@ func (n *Node) Prefix() []byte {
 	}
 
 	return n.prefix[:n.plen]
+}
+
+// HasPrefix : returns true if a node has a prefix
+func (n *Node) HasPrefix() bool {
+	return n.plen > 0
+}
+
+// PrefixSize : returns the size of the nodes prefix
+func (n *Node) PrefixSize() int {
+	return int(n.plen)
 }
 
 // Size : returns size of associated node data
@@ -90,9 +105,9 @@ func (n *Node) Offset() int64 {
 // SetLeaf : returns true if node has associated data
 func (n *Node) SetLeaf(leaf bool) {
 	if leaf {
-		n.isLeaf = 1
+		n.leaf = 1
 	} else {
-		n.isLeaf = 0
+		n.leaf = 0
 	}
 }
 
@@ -116,7 +131,7 @@ func (n *Node) SetPrefix(prefix []byte) {
 func Serialize(n *Node) []byte {
 	data := make([]byte, 4096)
 
-	data[0] = *(*byte)(unsafe.Pointer(&n.isLeaf))
+	data[0] = *(*byte)(unsafe.Pointer(&n.leaf))
 	data[1] = *(*byte)(unsafe.Pointer(&n.plen))
 
 	prefix := *(*[128]byte)(unsafe.Pointer(&n.prefix))
@@ -137,7 +152,7 @@ func Serialize(n *Node) []byte {
 // Deserialize : deserialize from a byteslice to a Node
 func Deserialize(data []byte) *Node {
 	return &Node{
-		isLeaf: *(*uint8)(unsafe.Pointer(&data[0])),
+		leaf:   *(*uint8)(unsafe.Pointer(&data[0])),
 		plen:   *(*uint8)(unsafe.Pointer(&data[1])),
 		prefix: *(*[128]byte)(unsafe.Pointer(&data[2])),
 		edges:  *(*[256]int64)(unsafe.Pointer(&data[130])),

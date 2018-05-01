@@ -8,7 +8,7 @@ import (
 
 func TestSerialize(t *testing.T) {
 	node := Node{
-		isLeaf: 1,
+		leaf:   1,
 		plen:   0,
 		offset: 102400,
 		size:   4096,
@@ -39,7 +39,7 @@ func TestNext(t *testing.T) {
 	key := []byte("k")[0]
 
 	node := Node{
-		isLeaf: 1,
+		leaf:   1,
 		offset: 102400,
 		size:   4096,
 	}
@@ -51,7 +51,7 @@ func TestNext(t *testing.T) {
 
 func TestEmpty(t *testing.T) {
 	node := Node{
-		isLeaf: 0,
+		leaf:   0,
 		offset: 0,
 		size:   0,
 	}
@@ -59,7 +59,7 @@ func TestEmpty(t *testing.T) {
 	assert.True(t, node.Empty())
 
 	node = Node{
-		isLeaf: 0,
+		leaf:   1,
 		offset: 0,
 		size:   1024,
 	}
@@ -67,7 +67,7 @@ func TestEmpty(t *testing.T) {
 	assert.False(t, node.Empty())
 
 	node = Node{
-		isLeaf: 0,
+		leaf:   0,
 		offset: 0,
 		size:   0,
 	}
