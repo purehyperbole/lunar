@@ -27,8 +27,6 @@ func TestRadixInsert(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.Name, func(t *testing.T) {
-			fl := table.NewFreeList(1 << 30)
-
 			tbl, err := table.New("test-insert.index")
 			assert.Nil(t, err)
 			assert.NotNil(t, tbl)
@@ -43,39 +41,26 @@ func TestRadixInsert(t *testing.T) {
 			assert.NotNil(t, r)
 
 			for _, kv := range tc.Existing {
-				sz := int64(len(kv.Value))
-				off, _ := fl.Reserve(sz)
-
-				_, err := r.Insert([]byte(kv.Key), sz, off)
+				_, err := r.Insert([]byte(kv.Key))
 				assert.Nil(t, err)
 			}
 
 			for _, kv := range tc.Creates {
-				sz := int64(len(kv.Value))
-				off, _ := fl.Reserve(sz)
-
-				_, err := r.Insert([]byte(kv.Key), sz, off)
+				_, err := r.Insert([]byte(kv.Key))
 				assert.Nil(t, err)
 
 				n, err := r.Lookup([]byte(kv.Key))
 				assert.Nil(t, err)
 				assert.NotNil(t, n)
-				assert.Equal(t, off, n.Offset())
-				assert.Equal(t, sz, n.Size())
 			}
 
 			for _, kv := range tc.Updates {
-				sz := int64(len(kv.Value))
-				off, _ := fl.Reserve(sz)
-
-				_, err := r.Insert([]byte(kv.Key), sz, off)
+				_, err := r.Insert([]byte(kv.Key))
 				assert.Nil(t, err)
 
 				n, err := r.Lookup([]byte(kv.Key))
 				assert.Nil(t, err)
 				assert.NotNil(t, n)
-				assert.Equal(t, off, n.Offset())
-				assert.Equal(t, sz, n.Size())
 			}
 		})
 	}
@@ -99,8 +84,6 @@ func TestRadixLookup(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.Name, func(t *testing.T) {
-			fl := table.NewFreeList(1 << 30)
-
 			tbl, err := table.New("test-lookup.index")
 			assert.Nil(t, err)
 			assert.NotNil(t, tbl)
@@ -115,10 +98,8 @@ func TestRadixLookup(t *testing.T) {
 			assert.NotNil(t, r)
 
 			for _, kv := range tc.Existing {
-				sz := int64(len(kv.Value))
-				off, _ := fl.Reserve(sz)
 
-				_, err := r.Insert([]byte(kv.Key), sz, off)
+				_, err := r.Insert([]byte(kv.Key))
 				assert.Nil(t, err)
 			}
 
