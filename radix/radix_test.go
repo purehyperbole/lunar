@@ -46,7 +46,7 @@ func TestRadixInsert(t *testing.T) {
 				sz := int64(len(kv.Value))
 				off, _ := fl.Reserve(sz)
 
-				err := r.Insert([]byte(kv.Key), sz, off)
+				_, err := r.Insert([]byte(kv.Key), sz, off)
 				assert.Nil(t, err)
 			}
 
@@ -54,7 +54,7 @@ func TestRadixInsert(t *testing.T) {
 				sz := int64(len(kv.Value))
 				off, _ := fl.Reserve(sz)
 
-				err := r.Insert([]byte(kv.Key), sz, off)
+				_, err := r.Insert([]byte(kv.Key), sz, off)
 				assert.Nil(t, err)
 
 				n, err := r.Lookup([]byte(kv.Key))
@@ -68,7 +68,7 @@ func TestRadixInsert(t *testing.T) {
 				sz := int64(len(kv.Value))
 				off, _ := fl.Reserve(sz)
 
-				err := r.Insert([]byte(kv.Key), sz, off)
+				_, err := r.Insert([]byte(kv.Key), sz, off)
 				assert.Nil(t, err)
 
 				n, err := r.Lookup([]byte(kv.Key))
@@ -118,7 +118,7 @@ func TestRadixLookup(t *testing.T) {
 				sz := int64(len(kv.Value))
 				off, _ := fl.Reserve(sz)
 
-				err := r.Insert([]byte(kv.Key), sz, off)
+				_, err := r.Insert([]byte(kv.Key), sz, off)
 				assert.Nil(t, err)
 			}
 

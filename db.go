@@ -58,32 +58,12 @@ func (db *DB) Get(key string) ([]byte, error) {
 func (db *DB) Set(key string, value []byte) error {
 	k := []byte(key)
 
-	n, err := db.index.Lookup(k)
+	n, err := db.index.Insert(k)
 	if err != nil && err != radix.ErrNotFound {
 		return err
 	}
 
-	if n != nil {
-		return db.update(n, k, value)
-	}
-
-	return db.create(k, value)
-}
-
-func (db *DB) create(key, value []byte) error {
-	sz := int64(len(value))
-
-	off, err := db.data.Free.Reserve(sz)
-	if err != nil {
-		return err
-	}
-
-	err = db.data.Write(value, off)
-	if err != nil {
-		return err
-	}
-
-	return db.index.Insert(key, sz, off)
+	return db.update(n, k, value)
 }
 
 func (db *DB) update(n *node.Node, key, value []byte) error {
