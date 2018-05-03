@@ -228,6 +228,7 @@ func (r *Radix) splitnode(parent *node.Node, dv int, prefix []byte) (*node.Node,
 		return nil, err
 	}
 
+	// replace the parent node if the prefix is smaller than the found node
 	if len(prefix) == dv {
 		ndata = node.Serialize(nn)
 

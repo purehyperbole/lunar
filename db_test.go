@@ -44,21 +44,21 @@ func TestDBSet(t *testing.T) {
 	assert.Nil(t, err)
 
 	// insert new key & retrieve
-	err = db.Set("test-key", []byte("test"))
+	err = db.Sets("test-key", []byte("test"))
 
 	assert.Nil(t, err)
 
-	data, err := db.Get("test-key")
+	data, err := db.Gets("test-key")
 
 	assert.Nil(t, err)
 	assert.Equal(t, []byte("test"), data)
 
 	// update existing key
-	err = db.Set("test-key", []byte("test-1234"))
+	err = db.Sets("test-key", []byte("test-1234"))
 
 	assert.Nil(t, err)
 
-	data, err = db.Get("test-key")
+	data, err = db.Gets("test-key")
 
 	assert.Nil(t, err)
 	assert.Equal(t, []byte("test-1234"), data)
@@ -71,17 +71,17 @@ func TestDBGet(t *testing.T) {
 	assert.Nil(t, err)
 
 	// get a nonexistant key
-	data, err := db.Get("test-key")
+	data, err := db.Gets("test-key")
 
 	assert.NotNil(t, err)
 	assert.Nil(t, data)
 
 	// get an existing key
-	err = db.Set("test-key", []byte("test-1234"))
+	err = db.Sets("test-key", []byte("test-1234"))
 
 	assert.Nil(t, err)
 
-	data, err = db.Get("test-key")
+	data, err = db.Gets("test-key")
 
 	assert.Nil(t, err)
 	assert.Equal(t, []byte("test-1234"), data)
@@ -96,7 +96,7 @@ func TestDBGet(t *testing.T) {
 
 	assert.Nil(t, err)
 
-	data, err = db.Get("test-key")
+	data, err = db.Gets("test-key")
 
 	assert.Nil(t, err)
 	assert.Equal(t, []byte("test-1234"), data)

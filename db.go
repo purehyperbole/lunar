@@ -38,11 +38,9 @@ func (db *DB) Close() error {
 	return db.data.Close()
 }
 
-// Get : get an item by key
-func (db *DB) Get(key string) ([]byte, error) {
-	k := []byte(key)
-
-	n, err := db.index.Lookup(k)
+// Get : get a value by key
+func (db *DB) Get(key []byte) ([]byte, error) {
+	n, err := db.index.Lookup(key)
 	if err != nil {
 		return nil, err
 	}
@@ -54,8 +52,8 @@ func (db *DB) Get(key string) ([]byte, error) {
 	return db.data.Read(n.Size(), n.Offset())
 }
 
-// Set : set an item by key and value
-func (db *DB) Set(key string, value []byte) error {
+// Set : set value by key
+func (db *DB) Set(key, value []byte) error {
 	k := []byte(key)
 
 	n, err := db.index.Insert(k)
@@ -64,6 +62,16 @@ func (db *DB) Set(key string, value []byte) error {
 	}
 
 	return db.update(n, k, value)
+}
+
+// Gets : get a value by string key
+func (db *DB) Gets(key string) ([]byte, error) {
+	return db.Get([]byte(key))
+}
+
+// Sets : set a value by string key
+func (db *DB) Sets(key string, value []byte) error {
+	return db.Set([]byte(key), value)
 }
 
 func (db *DB) update(n *node.Node, key, value []byte) error {
