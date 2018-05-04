@@ -230,20 +230,28 @@ func (r *Radix) splitnode(parent *node.Node, dv int, prefix []byte) (*node.Node,
 
 	// replace the parent node if the prefix is smaller than the found node
 	if len(prefix) == dv {
-		ndata = node.Serialize(nn)
-
-		err = r.t.Write(ndata, parent.NodeOffset)
-		if err != nil {
-			return nil, err
-		}
-
-		nn.NodeOffset = parent.NodeOffset
-
-		r.nodes++
-
-		return nn, nil
+		return r.twowaysplit(parent, nn)
 	}
 
+	return r.threewaysplit(prefix, dv, parent, nn)
+}
+
+func (r *Radix) twowaysplit(parent, n *node.Node) (*node.Node, error) {
+	ndata := node.Serialize(n)
+
+	err := r.t.Write(ndata, parent.NodeOffset)
+	if err != nil {
+		return nil, err
+	}
+
+	n.NodeOffset = parent.NodeOffset
+
+	r.nodes++
+
+	return n, nil
+}
+
+func (r *Radix) threewaysplit(prefix []byte, dv int, parent, n *node.Node) (*node.Node, error) {
 	sn := node.New()
 
 	if len(prefix) > dv {
@@ -257,16 +265,16 @@ func (r *Radix) splitnode(parent *node.Node, dv int, prefix []byte) (*node.Node,
 
 	sn.NodeOffset = soff
 
-	ndata = node.Serialize(sn)
+	ndata := node.Serialize(sn)
 
 	err = r.t.Write(ndata, soff)
 	if err != nil {
 		return nil, err
 	}
 
-	nn.SetNext(prefix[dv], soff)
+	n.SetNext(prefix[dv], soff)
 
-	ndata = node.Serialize(nn)
+	ndata = node.Serialize(n)
 
 	err = r.t.Write(ndata, parent.NodeOffset)
 	if err != nil {
@@ -312,6 +320,7 @@ func (r *Radix) graphviz(gvoutput *[]string, gvzc *int, previous string, n *node
 			n := node.Deserialize(ndata)
 
 			(*gvoutput) = append((*gvoutput), fmt.Sprintf("  \"%s\" -> \"[%d] %s\" [label=\"%s\"]", previous, *gvzc, string(n.Prefix()), string(byte(i))))
+
 			err = r.graphviz(gvoutput, gvzc, fmt.Sprintf("[%d] %s", *gvzc, string(n.Prefix())), n)
 			if err != nil {
 				return err
