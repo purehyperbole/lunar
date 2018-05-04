@@ -37,13 +37,13 @@ func main() {
 `Get` allows data to be retrieved.
 
 ```go
-data, err := db.Get("myKey1234")
+data, err := db.Get([]byte("myKey1234"))
 ```
 
 `Set` allows data to be stored.
 
 ```go
-err := db.Set("myKey1234", []byte(`{"status": "ok"}`))
+err := db.Set([]byte("myKey1234"), []byte(`{"status": "ok"}`))
 ```
 
 # Features/Wishlist
@@ -51,7 +51,6 @@ err := db.Set("myKey1234", []byte(`{"status": "ok"}`))
 - [x] Persistence
 - [x] Compressed tree nodes (radix)
 - [x] Sync mmap data on resize
-- [ ] Split prefixes into multiple nodes if they exceed 128 bytes
 - [ ] Configurable sync on write options
 - [ ] Transactions (MVCC)
 - [ ] Data file compaction

@@ -97,7 +97,7 @@ func TestRadixLookup(t *testing.T) {
 			"split",
 			3,
 			[]testvalue{{"test1234", "bacon", "234"}, {"test", "1234", "est"}},
-			[]testvalue{{"test1234", "bacon", "234"}},
+			[]testvalue{{"test1234", "bacon", "234"}, {"test1234", "bacon", "234"}},
 		},
 		{
 			"split-single-shared-character",

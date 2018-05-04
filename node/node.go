@@ -8,6 +8,8 @@ import (
 const (
 	// NodeSize : the allocated size of the node
 	NodeSize = 1 << 12
+	// MaxPrefix : the largest prefix size supported
+	MaxPrefix = 128
 )
 
 var (
