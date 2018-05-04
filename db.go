@@ -38,11 +38,9 @@ func (db *DB) Close() error {
 	return db.data.Close()
 }
 
-// Get : get an item by key
-func (db *DB) Get(key string) ([]byte, error) {
-	k := []byte(key)
-
-	n, err := db.index.Lookup(k)
+// Get : get a value by key
+func (db *DB) Get(key []byte) ([]byte, error) {
+	n, err := db.index.Lookup(key)
 	if err != nil {
 		return nil, err
 	}
@@ -54,36 +52,26 @@ func (db *DB) Get(key string) ([]byte, error) {
 	return db.data.Read(n.Size(), n.Offset())
 }
 
-// Set : set an item by key and value
-func (db *DB) Set(key string, value []byte) error {
+// Set : set value by key
+func (db *DB) Set(key, value []byte) error {
 	k := []byte(key)
 
-	n, err := db.index.Lookup(k)
+	n, err := db.index.Insert(k)
 	if err != nil && err != radix.ErrNotFound {
 		return err
 	}
 
-	if n != nil {
-		return db.update(n, k, value)
-	}
-
-	return db.create(k, value)
+	return db.update(n, k, value)
 }
 
-func (db *DB) create(key, value []byte) error {
-	sz := int64(len(value))
+// Gets : get a value by string key
+func (db *DB) Gets(key string) ([]byte, error) {
+	return db.Get([]byte(key))
+}
 
-	off, err := db.data.Free.Reserve(sz)
-	if err != nil {
-		return err
-	}
-
-	err = db.data.Write(value, off)
-	if err != nil {
-		return err
-	}
-
-	return db.index.Insert(key, sz, off)
+// Sets : set a value by string key
+func (db *DB) Sets(key string, value []byte) error {
+	return db.Set([]byte(key), value)
 }
 
 func (db *DB) update(n *node.Node, key, value []byte) error {

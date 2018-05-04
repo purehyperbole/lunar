@@ -2,6 +2,8 @@ package radix
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/purehyperbole/lunar/node"
 	"github.com/purehyperbole/lunar/table"
@@ -20,77 +22,89 @@ type Radix struct {
 
 // New : creates a new radix tree backed by a persistent table
 func New(table *table.Table) *Radix {
-	return &Radix{table, 0}
+	return &Radix{table, 1}
 }
 
 // Lookup : returns the index and size for a particular key
 // if the key isn't found, an error will be returned
 func (r *Radix) Lookup(key []byte) (*node.Node, error) {
-	var next int64
-
-	n, err := r.root()
+	n, pos, _, err := r.lookup(key)
 	if err != nil {
 		return nil, err
 	}
 
-	for i := 0; i < len(key); i++ {
-		next = n.Next(key[i])
-
-		if next == 0 {
-			return nil, ErrNotFound
-		}
-
-		ndata, err := r.t.Read(node.NodeSize, next)
-		if err != nil {
-			return nil, err
-		}
-
-		n = node.Deserialize(ndata)
+	if len(key) > pos {
+		return nil, ErrNotFound
 	}
-
-	n.NodeOffset = next
 
 	return n, nil
 }
 
-// Insert : adds a key to the radix tree
-func (r *Radix) Insert(key []byte, size, offset int64) error {
+func (r *Radix) lookup(key []byte) (*node.Node, int, int, error) {
+	var i, dv int
 	var next int64
 
 	n, err := r.root()
 	if err != nil {
-		return err
+		return nil, 0, 0, err
 	}
 
-	for i := 0; i < len(key); i++ {
-		var ndata []byte
-
-		if n.Next(key[i]) == 0 {
-			n, next, err = r.createnode(n, next, key[i])
-			if err != nil {
-				return err
-			}
-
-			r.nodes++
-			continue
-		}
-
+	for n.Next(key[i]) != 0 {
 		next = n.Next(key[i])
+		if next == 0 {
+			return nil, 0, 0, ErrNotFound
+		}
+		i++
 
-		ndata, err = r.t.Read(node.NodeSize, next)
+		ndata, err := r.t.Read(node.NodeSize, next)
 		if err != nil {
-			return err
+			return nil, 0, 0, err
 		}
 
 		n = node.Deserialize(ndata)
+
+		if n.HasPrefix() {
+			dv = divergence(n.Prefix(), key[i:])
+
+			if len(n.Prefix()) > dv {
+				n.NodeOffset = next
+				return n, i, dv, nil
+			}
+
+			i = i + dv
+		}
+
+		// if we've found the key, break the loop
+		if i == len(key) {
+			break
+		}
 	}
 
-	n.SetSize(size)
-	n.SetOffset(offset)
+	n.NodeOffset = next
 
-	ndata := node.Serialize(n)
+	return n, i, dv, nil
+}
 
-	return r.t.Write(ndata, next)
+// Insert : adds a key to the radix tree
+func (r *Radix) Insert(key []byte) (*node.Node, error) {
+	n, i, dv, err := r.lookup(key)
+	if err != nil && err != ErrNotFound {
+		return nil, err
+	}
+
+	switch {
+	// found keys prefix differs : split
+	case n.HasPrefix() && n.PrefixSize() > dv:
+		n, err = r.splitnode(n, dv, key[i:])
+	// key matches : update node!
+	case i == len(key):
+		return n, nil
+	// found key and its prefix is a sub key : create
+	case n.HasPrefix() && dv == n.PrefixSize() || i < len(key):
+		n, err = r.createnode(n, key[i:])
+	}
+
+	return n, err
 }
 
 // Modify : overwrites a node at a given offset
@@ -140,26 +154,185 @@ func (r *Radix) root() (*node.Node, error) {
 	return n, nil
 }
 
-func (r *Radix) createnode(cn *node.Node, ci int64, c byte) (*node.Node, int64, error) {
-	// create new node and assign it space
-	n := node.New()
+func (r *Radix) createnode(parent *node.Node, prefix []byte) (*node.Node, error) {
+	var n *node.Node
+	var err error
+
+	// create new node(s) and assign it space
+	// if the prefix exceeds 128 bytes, slit it
+	for _, pfx := range splitprefix(prefix) {
+		n = node.New()
+
+		if len(pfx) > 1 {
+			n.SetPrefix(pfx[1:])
+		}
+
+		ndata := node.Serialize(n)
+
+		n.NodeOffset, err = r.t.Free.Reserve(node.NodeSize)
+		if err != nil {
+			return nil, err
+		}
+
+		// write new node
+		err = r.t.Write(ndata, n.NodeOffset)
+		if err != nil {
+			return nil, err
+		}
+
+		// update current node with offset to new node
+		parent.SetNext(pfx[0], n.NodeOffset)
+
+		ndata = node.Serialize(parent)
+
+		err = r.t.Write(ndata, parent.NodeOffset)
+		if err != nil {
+			return nil, err
+		}
+
+		parent = n
+		r.nodes++
+	}
+
+	return n, nil
+}
+
+func (r *Radix) splitnode(parent *node.Node, dv int, prefix []byte) (*node.Node, error) {
+	var err error
+
+	// new split node
+	nn := node.New()
+	nn.NodeOffset = parent.NodeOffset
+
+	// allocate space for existing existing node
+	parent.NodeOffset, err = r.t.Free.Reserve(node.NodeSize)
+	if err != nil {
+		return nil, err
+	}
+
+	// set parent as edge on new node
+	nn.SetPrefix(parent.Prefix()[:dv])
+	nn.SetNext(parent.Prefix()[dv], parent.NodeOffset)
+
+	// update existing node's prefix
+	if parent.PrefixSize() > dv+1 {
+		parent.SetPrefix(parent.Prefix()[dv+1:])
+	} else {
+		parent.SetPrefix(nil)
+	}
+
+	// write existing node
+	ndata := node.Serialize(parent)
+
+	err = r.t.Write(ndata, parent.NodeOffset)
+	if err != nil {
+		return nil, err
+	}
+
+	// replace the parent node if the prefix is smaller than the found node
+	if len(prefix) == dv {
+		return r.twowaysplit(nn)
+	}
+
+	return r.threewaysplit(nn, dv, prefix)
+}
+
+func (r *Radix) twowaysplit(n *node.Node) (*node.Node, error) {
 	ndata := node.Serialize(n)
 
-	next, err := r.t.Free.Reserve(int64(len(ndata)))
+	err := r.t.Write(ndata, n.NodeOffset)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
-	// write new node
-	err = r.t.Write(ndata, next)
+	r.nodes++
+
+	return n, nil
+}
+
+func (r *Radix) threewaysplit(n *node.Node, dv int, prefix []byte) (*node.Node, error) {
+	n, err := r.createnode(n, prefix[dv:])
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
-	// update current node with offset to new node
-	cn.SetNext(c, next)
+	r.nodes++
 
-	ndata = node.Serialize(cn)
+	return n, nil
+}
 
-	return n, next, r.t.Write(ndata, ci)
+// Graphviz : returns a graphviz formatted string of all the nodes in the tree
+// this should only be run on trees with relatively few nodes
+func (r *Radix) Graphviz() (string, error) {
+	gvoutput := []string{"digraph G {"}
+	gvzc := 0
+
+	root, err := r.root()
+	if err != nil {
+		return "", err
+	}
+
+	err = r.graphviz(&gvoutput, &gvzc, "[-1] ROOT", root)
+	if err != nil {
+		return "", err
+	}
+
+	gvoutput = append(gvoutput, "}")
+
+	return fmt.Sprint(strings.Join(gvoutput, "\n")), nil
+}
+
+func (r *Radix) graphviz(gvoutput *[]string, gvzc *int, previous string, n *node.Node) error {
+	for i, e := range n.Edges() {
+		if e != 0 {
+			(*gvzc)++
+
+			ndata, err := r.t.Read(node.NodeSize, e)
+			if err != nil {
+				return err
+			}
+
+			n := node.Deserialize(ndata)
+
+			(*gvoutput) = append((*gvoutput), fmt.Sprintf("  \"%s\" -> \"[%d] %s\" [label=\"%s\"]", previous, *gvzc, string(n.Prefix()), string(byte(i))))
+
+			err = r.graphviz(gvoutput, gvzc, fmt.Sprintf("[%d] %s", *gvzc, string(n.Prefix())), n)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// returns shared and divergent characters respectively
+func divergence(prefix, key []byte) int {
+	var i int
+
+	for i < len(key) && i < len(prefix) {
+		if key[i] != prefix[i] {
+			break
+		}
+		i++
+	}
+
+	return i
+}
+
+func splitprefix(prefix []byte) [][]byte {
+	var p []byte
+
+	pfxs := make([][]byte, 0, len(prefix)/node.MaxPrefix+1)
+
+	for len(prefix) >= node.MaxPrefix {
+		p, prefix = prefix[:node.MaxPrefix], prefix[node.MaxPrefix:]
+		pfxs = append(pfxs, p)
+	}
+
+	if len(prefix) > 0 {
+		pfxs = append(pfxs, prefix[:len(prefix)])
+	}
+
+	return pfxs
 }
