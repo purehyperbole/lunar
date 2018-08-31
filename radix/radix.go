@@ -120,6 +120,19 @@ func (r *Radix) Delete(key []byte) (int64, int64, error) {
 	return -1, -1, nil
 }
 
+// Snapshot : snapshots the contents of the index table
+func (r *Radix) Snapshot() *Radix {
+	return &Radix{
+		t:     r.t.Snapshot(),
+		nodes: r.nodes,
+	}
+}
+
+// WriteCache : all writes that have been submitted in a transaction
+func (r *Radix) WriteCache() map[int64][]byte {
+	return r.t.WriteCache()
+}
+
 // Close : close the underlying table
 func (r *Radix) Close() error {
 	return r.t.Close()

@@ -27,6 +27,8 @@ type Node struct {
 	edges      [256]int64 // possile indicies to next child nodes
 	offset     int64      // reference to offset of data
 	size       int64      // reference to size of data
+	xmin       uint64     // transaction id that created/updated the node's data
+	xmax       uint64     // transaction that deleted the node's data
 }
 
 // New : returns a new node
@@ -104,6 +106,16 @@ func (n *Node) Offset() int64 {
 	return n.offset
 }
 
+// Xmin : returns the transaction id that created/updated the nodes data
+func (n *Node) Xmin() uint64 {
+	return n.xmin
+}
+
+// Xmax : returns the transaction id that deleted the nodes data
+func (n *Node) Xmax() uint64 {
+	return n.xmin
+}
+
 // SetLeaf : returns true if node has associated data
 func (n *Node) SetLeaf(leaf bool) {
 	if leaf {
@@ -143,10 +155,16 @@ func Serialize(n *Node) []byte {
 	copy(data[130:], edges[:])
 
 	offset := *(*[8]byte)(unsafe.Pointer(&n.offset))
-	copy(data[4080:], offset[:])
+	copy(data[4064:], offset[:])
 
 	size := *(*[8]byte)(unsafe.Pointer(&n.size))
-	copy(data[4088:], size[:])
+	copy(data[4072:], size[:])
+
+	xmin := *(*[8]byte)(unsafe.Pointer(&n.xmin))
+	copy(data[4080:], xmin[:])
+
+	xmax := *(*[8]byte)(unsafe.Pointer(&n.xmax))
+	copy(data[4088:], xmax[:])
 
 	return data
 }
@@ -158,7 +176,9 @@ func Deserialize(data []byte) *Node {
 		plen:   *(*uint8)(unsafe.Pointer(&data[1])),
 		prefix: *(*[128]byte)(unsafe.Pointer(&data[2])),
 		edges:  *(*[256]int64)(unsafe.Pointer(&data[130])),
-		offset: *(*int64)(unsafe.Pointer(&data[4080])),
-		size:   *(*int64)(unsafe.Pointer(&data[4088])),
+		offset: *(*int64)(unsafe.Pointer(&data[4064])),
+		size:   *(*int64)(unsafe.Pointer(&data[4072])),
+		xmin:   *(*uint64)(unsafe.Pointer(&data[4080])),
+		xmax:   *(*uint64)(unsafe.Pointer(&data[4088])),
 	}
 }

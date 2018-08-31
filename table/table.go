@@ -28,9 +28,11 @@ var (
 
 // Table : mmaped file
 type Table struct {
-	Free    *FreeList
-	fd      *os.File
-	mapping []byte
+	Free     *FreeList
+	fd       *os.File
+	mapping  []byte
+	cache    map[int64][]byte
+	snapshot bool
 }
 
 // New : loads a new table
@@ -50,6 +52,55 @@ func New(path string) (*Table, error) {
 
 // Read : reads from table at a given offset
 func (t *Table) Read(size, offset int64) ([]byte, error) {
+	if t.snapshot {
+		return t.cacheread(size, offset)
+	}
+
+	return t.read(size, offset)
+}
+
+// Write : writes to table at a given offset
+func (t *Table) Write(data []byte, offset int64) error {
+	if t.snapshot {
+		return t.cachewrite(data, offset)
+	}
+
+	return t.write(data, offset)
+}
+
+// Snapshot : creates a snapshot of the table used for transactions
+func (t *Table) Snapshot() *Table {
+	s := make([]byte, len(t.mapping))
+	copy(s, t.mapping)
+
+	return &Table{
+		mapping:  s,
+		snapshot: true,
+		cache:    make(map[int64][]byte),
+	}
+}
+
+// WriteCache : all pending transactional writes
+func (t *Table) WriteCache() map[int64][]byte {
+	return t.cache
+}
+
+// Close : close table file descriptor and unmap
+func (t *Table) Close() error {
+	err := t.sync()
+	if err != nil {
+		return err
+	}
+
+	err = t.munmap()
+	if err != nil {
+		return err
+	}
+
+	return t.fd.Close()
+}
+
+func (t *Table) read(size, offset int64) ([]byte, error) {
 	if int64(len(t.mapping)) < (offset + size) {
 		return nil, ErrBoundsViolation
 	}
@@ -57,8 +108,7 @@ func (t *Table) Read(size, offset int64) ([]byte, error) {
 	return t.mapping[offset:(offset + size)], nil
 }
 
-// Write : writes to table at a given offset
-func (t *Table) Write(data []byte, offset int64) error {
+func (t *Table) write(data []byte, offset int64) error {
 	if len(data) > MaxStep {
 		return ErrDataSizeTooLarge
 	}
@@ -75,19 +125,20 @@ func (t *Table) Write(data []byte, offset int64) error {
 	return nil
 }
 
-// Close : close table file descriptor and unmap
-func (t *Table) Close() error {
-	err := t.sync()
-	if err != nil {
-		return err
+func (t *Table) cacheread(size, offset int64) ([]byte, error) {
+	ci := t.cache[offset]
+
+	if ci != nil {
+		return ci, nil
 	}
 
-	err = t.munmap()
-	if err != nil {
-		return err
-	}
+	return t.read(size, offset)
+}
 
-	return t.fd.Close()
+func (t *Table) cachewrite(data []byte, offset int64) error {
+	t.cache[offset] = data
+
+	return nil
 }
 
 func (t *Table) open(path string) error {

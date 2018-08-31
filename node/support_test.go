@@ -32,7 +32,7 @@ func testBuildBytes() []byte {
 	scratch2 = append(scratch2, (*[8]byte)(unsafe.Pointer(&o))[:]...)
 	scratch2 = append(scratch2, (*[8]byte)(unsafe.Pointer(&s))[:]...)
 
-	copy(data[4080:], scratch2[:])
+	copy(data[4064:], scratch2[:])
 
 	return data
 }
