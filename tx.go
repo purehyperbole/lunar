@@ -20,6 +20,11 @@ type Tx struct {
 	readonly bool
 }
 
+type allocation struct {
+	Size   int64
+	Offset int64
+}
+
 // NewTransaction : creates a new transaction
 func NewTransaction(db *DB, readonly bool) *Tx {
 	tx := &Tx{
