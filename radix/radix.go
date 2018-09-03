@@ -107,6 +107,11 @@ func (r *Radix) Insert(key []byte) (*node.Node, error) {
 	return n, err
 }
 
+// Read : read a node at a given offset
+func (r *Radix) Read(offset int64) ([]byte, error) {
+	return r.t.Read(node.NodeSize, offset)
+}
+
 // Modify : overwrites a node at a given offset
 func (r *Radix) Modify(n *node.Node, offset int64) error {
 	ndata := node.Serialize(n)

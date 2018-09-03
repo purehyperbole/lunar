@@ -27,8 +27,8 @@ type Node struct {
 	edges      [256]int64 // possile indicies to next child nodes
 	offset     int64      // reference to offset of data
 	size       int64      // reference to size of data
-	xmin       uint64     // transaction id that created/updated the node's data
-	xmax       uint64     // transaction that deleted the node's data
+	txid       uint64     // transaction id that created/updated the node's data
+	prevtxid   uint64     // previous transaction id that updated the node's data
 }
 
 // New : returns a new node
@@ -106,14 +106,14 @@ func (n *Node) Offset() int64 {
 	return n.offset
 }
 
-// Xmin : returns the transaction id that created/updated the nodes data
-func (n *Node) Xmin() uint64 {
-	return n.xmin
+// Txid : returns the transaction id that created/updated the nodes data
+func (n *Node) Txid() uint64 {
+	return n.txid
 }
 
-// Xmax : returns the transaction id that deleted the nodes data
-func (n *Node) Xmax() uint64 {
-	return n.xmin
+// PrevTxid : returns the transaction id that created/updated the nodes data
+func (n *Node) PrevTxid() uint64 {
+	return n.prevtxid
 }
 
 // SetLeaf : returns true if node has associated data
@@ -141,6 +141,16 @@ func (n *Node) SetPrefix(prefix []byte) {
 	copy(n.prefix[:], prefix)
 }
 
+// SetTxid : sets the id of the last transaction that updated the node
+func (n *Node) SetTxid(txid uint64) {
+	n.txid = txid
+}
+
+// SetPrevTxid : sets the id of the last transaction that updated the node
+func (n *Node) SetPrevTxid(txid uint64) {
+	n.prevtxid = txid
+}
+
 // Serialize : serialize a node to a byteslice
 func Serialize(n *Node) []byte {
 	data := make([]byte, 4096)
@@ -160,11 +170,8 @@ func Serialize(n *Node) []byte {
 	size := *(*[8]byte)(unsafe.Pointer(&n.size))
 	copy(data[4072:], size[:])
 
-	xmin := *(*[8]byte)(unsafe.Pointer(&n.xmin))
-	copy(data[4080:], xmin[:])
-
-	xmax := *(*[8]byte)(unsafe.Pointer(&n.xmax))
-	copy(data[4088:], xmax[:])
+	txid := *(*[8]byte)(unsafe.Pointer(&n.txid))
+	copy(data[4080:], txid[:])
 
 	return data
 }
@@ -178,7 +185,6 @@ func Deserialize(data []byte) *Node {
 		edges:  *(*[256]int64)(unsafe.Pointer(&data[130])),
 		offset: *(*int64)(unsafe.Pointer(&data[4064])),
 		size:   *(*int64)(unsafe.Pointer(&data[4072])),
-		xmin:   *(*uint64)(unsafe.Pointer(&data[4080])),
-		xmax:   *(*uint64)(unsafe.Pointer(&data[4088])),
+		txid:   *(*uint64)(unsafe.Pointer(&data[4080])),
 	}
 }

@@ -12,7 +12,7 @@ import (
 type DB struct {
 	index *radix.Radix
 	data  *table.Table
-	wl    *WriteLock
+	wlock *WriteLock
 	tx    uint64
 }
 
@@ -28,7 +28,7 @@ func Open(path string) (*DB, error) {
 	return &DB{
 		index: radix.New(idxt),
 		data:  dbt,
-		wl:    NewWriteLock(),
+		wlock: NewWriteLock(),
 	}, nil
 }
 

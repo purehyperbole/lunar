@@ -18,11 +18,12 @@ func NewWriteLock() *WriteLock {
 // Lock : locks a node at a specific offset
 func (wl *WriteLock) Lock(offset int64) {
 	wl.mu.Lock()
-	defer wl.mu.Unlock()
 
 	if wl.locks[offset] == nil {
 		wl.locks[offset] = &sync.Mutex{}
 	}
+
+	wl.mu.Unlock()
 
 	wl.locks[offset].Lock()
 }
@@ -33,5 +34,5 @@ func (wl *WriteLock) Unlock(offset int64) {
 	defer wl.mu.Unlock()
 
 	wl.locks[offset].Unlock()
-	delete(wl.locks, offset)
+	// delete(wl.locks, offset)
 }

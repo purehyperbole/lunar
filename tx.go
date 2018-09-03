@@ -46,7 +46,7 @@ func (tx *Tx) Get(key []byte) ([]byte, error) {
 		return nil, radix.ErrNotFound
 	}
 
-	return tx.snapshot.data.Read(n.Size(), n.Offset())
+	return tx.db.data.Read(n.Size(), n.Offset())
 }
 
 // Set : set value by key
@@ -67,9 +67,17 @@ func (tx *Tx) Set(key, value []byte) error {
 
 // Commit : commits the transaction
 func (tx *Tx) Commit() error {
+
 	for offset, data := range tx.snapshot.index.WriteCache() {
-		tx.db.wl.Lock(offset)
-		defer tx.db.wl.Unlock(offset)
+		tx.db.wlock.Lock(offset)
+		defer tx.db.wlock.Unlock(offset)
+
+		ndata, err := tx.db.index.Read(offset)
+		if err != nil {
+			return err
+		}
+
+		n := node.Deserialize(ndata)
 	}
 
 	return nil
@@ -81,6 +89,7 @@ func (tx *Tx) Rollback() error {
 }
 
 func (tx *Tx) update(n *node.Node, key, value []byte) error {
+	// TODO : release allocated space when all transactions using that data have completed
 	// db.data.Free.Release(n.Size(), n.Offset())
 	sz := int64(len(value))
 
@@ -91,6 +100,8 @@ func (tx *Tx) update(n *node.Node, key, value []byte) error {
 
 	n.SetOffset(off)
 	n.SetSize(sz)
+	n.SetPrevTxid(n.Txid())
+	n.SetTxid(tx.txid)
 
 	err = tx.db.data.Write(value, n.Offset())
 	if err != nil {
