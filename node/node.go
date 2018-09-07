@@ -28,7 +28,6 @@ type Node struct {
 	offset     int64      // reference to offset of data
 	size       int64      // reference to size of data
 	txid       uint64     // transaction id that created/updated the node's data
-	prevtxid   uint64     // previous transaction id that updated the node's data
 }
 
 // New : returns a new node
@@ -111,11 +110,6 @@ func (n *Node) Txid() uint64 {
 	return n.txid
 }
 
-// PrevTxid : returns the transaction id that created/updated the nodes data
-func (n *Node) PrevTxid() uint64 {
-	return n.prevtxid
-}
-
 // SetLeaf : returns true if node has associated data
 func (n *Node) SetLeaf(leaf bool) {
 	if leaf {
@@ -144,11 +138,6 @@ func (n *Node) SetPrefix(prefix []byte) {
 // SetTxid : sets the id of the last transaction that updated the node
 func (n *Node) SetTxid(txid uint64) {
 	n.txid = txid
-}
-
-// SetPrevTxid : sets the id of the last transaction that updated the node
-func (n *Node) SetPrevTxid(txid uint64) {
-	n.prevtxid = txid
 }
 
 // Serialize : serialize a node to a byteslice

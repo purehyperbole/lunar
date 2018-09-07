@@ -2,6 +2,7 @@ package table
 
 import (
 	"errors"
+	"sync"
 )
 
 var (
@@ -19,6 +20,7 @@ type alloc struct {
 type FreeList struct {
 	maxsize int64
 	root    *alloc
+	mu      sync.Mutex
 }
 
 // NewFreeList : creates a new freelist
@@ -33,8 +35,13 @@ func NewFreeList(maxsize int64) *FreeList {
 	}
 }
 
+// TODO : implement non-blocking linked list
+
 // Reserve : reserves free space and returns an index that matches the given size criteria
 func (f *FreeList) Reserve(size int64) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	current := f.root
 
 	for current != nil {
@@ -54,6 +61,9 @@ func (f *FreeList) Reserve(size int64) (int64, error) {
 
 // Allocate : allocates a specified region as reserved
 func (f *FreeList) Allocate(size, offset int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	current := f.root
 
 	for current.offset+current.size <= offset {
@@ -84,6 +94,9 @@ func (f *FreeList) Allocate(size, offset int64) error {
 
 // Release : releases reserved space so it can be reused
 func (f *FreeList) Release(size, offset int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	current := f.root
 
 	// may need to improve this if free space that overlaps multiple regions

@@ -8,8 +8,10 @@ import (
 )
 
 var (
-	//ErrTxReadOnly : the transaction is a readonly transaction
+	// ErrTxReadOnly : the transaction is a readonly transaction
 	ErrTxReadOnly = errors.New("cannot write in a readonly transaction")
+	// ErrTxWriteConflict : the transaction is attempting to write to a node based on a stale read
+	ErrTxWriteConflict = errors.New("write conlict detected")
 )
 
 // Tx : lunar transaction
@@ -72,17 +74,41 @@ func (tx *Tx) Set(key, value []byte) error {
 
 // Commit : commits the transaction
 func (tx *Tx) Commit() error {
+	wc := tx.snapshot.index.WriteCache()
 
-	for offset, data := range tx.snapshot.index.WriteCache() {
+	// lock all nodes we're going to write to
+	for offset := range wc {
+		// TODO : implement mvcc xmin and xmax checks
 		tx.db.wlock.Lock(offset)
 		defer tx.db.wlock.Unlock(offset)
+	}
 
+	for offset, data := range wc {
+		// compare nodes written to snapshot with whats currently persisted
 		ndata, err := tx.db.index.Read(offset)
 		if err != nil {
 			return err
 		}
 
-		n := node.Deserialize(ndata)
+		cn := node.Deserialize(ndata)
+
+		sndata, err := tx.snapshot.index.Read(offset)
+		if err != nil {
+			return err
+		}
+
+		sn := node.Deserialize(sndata)
+
+		// check tx id hasn't changed
+		if cn.Txid() != sn.Txid() {
+			return ErrTxWriteConflict
+		}
+
+		// write index data
+		err = tx.db.data.Write(data, offset)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -90,6 +116,7 @@ func (tx *Tx) Commit() error {
 
 // Rollback : rolls back the transaction
 func (tx *Tx) Rollback() error {
+	// TODO : track and free data writen to data file & reserved space on index
 	return nil
 }
 
@@ -105,7 +132,6 @@ func (tx *Tx) update(n *node.Node, key, value []byte) error {
 
 	n.SetOffset(off)
 	n.SetSize(sz)
-	n.SetPrevTxid(n.Txid())
 	n.SetTxid(tx.txid)
 
 	err = tx.db.data.Write(value, n.Offset())
@@ -113,6 +139,5 @@ func (tx *Tx) update(n *node.Node, key, value []byte) error {
 		return err
 	}
 
-	// TODO : implement mvcc xmin and xmax checks
 	return tx.snapshot.index.Modify(n, n.NodeOffset)
 }
