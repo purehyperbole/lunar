@@ -29,7 +29,6 @@ type Node struct {
 	edges      [256]int64 // possile indicies to next child nodes
 	offset     int64      // reference to offset of data
 	size       int64      // reference to size of data
-	txid       uint64     // transaction id that created/updated the node's data
 }
 
 // New : returns a new node
@@ -107,11 +106,6 @@ func (n *Node) Offset() int64 {
 	return n.offset
 }
 
-// Txid : returns the transaction id that created/updated the nodes data
-func (n *Node) Txid() uint64 {
-	return n.txid
-}
-
 // SetLeaf : returns true if node has associated data
 func (n *Node) SetLeaf(leaf bool) {
 	if leaf {
@@ -137,11 +131,6 @@ func (n *Node) SetPrefix(prefix []byte) {
 	copy(n.prefix[:], prefix)
 }
 
-// SetTxid : sets the id of the last transaction that updated the node
-func (n *Node) SetTxid(txid uint64) {
-	n.txid = txid
-}
-
 // Serialize : serialize a node to a byteslice
 func Serialize(n *Node) []byte {
 	data := make([]byte, 4096)
@@ -161,9 +150,6 @@ func Serialize(n *Node) []byte {
 	size := *(*[8]byte)(unsafe.Pointer(&n.size))
 	copy(data[4072:], size[:])
 
-	txid := *(*[8]byte)(unsafe.Pointer(&n.txid))
-	copy(data[4080:], txid[:])
-
 	return data
 }
 
@@ -176,7 +162,6 @@ func Deserialize(data []byte) *Node {
 		edges:  *(*[256]int64)(unsafe.Pointer(&data[130])),
 		offset: *(*int64)(unsafe.Pointer(&data[4064])),
 		size:   *(*int64)(unsafe.Pointer(&data[4072])),
-		txid:   *(*uint64)(unsafe.Pointer(&data[4080])),
 	}
 }
 
@@ -190,7 +175,6 @@ func Print(n *Node) {
 	output = append(output, fmt.Sprintf("	Prefix: %s", string(n.Prefix())))
 	output = append(output, fmt.Sprintf("	Data Offset: %d", n.offset))
 	output = append(output, fmt.Sprintf("	Data Size: %d", n.size))
-	output = append(output, fmt.Sprintf("	Transaction ID: %d", n.txid))
 
 	output = append(output, "	Edges: [")
 

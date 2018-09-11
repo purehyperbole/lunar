@@ -169,7 +169,7 @@ func (r *Radix) Delete(key []byte) (int64, int64, error) {
 // Snapshot : snapshots the contents of the index table
 func (r *Radix) Snapshot() *Radix {
 	return &Radix{
-		t:        r.t.Snapshot(),
+		t:        r.t,
 		snapshot: true,
 		cache:    make(map[int64]*node.Node),
 		nodes:    r.nodes,
@@ -262,10 +262,6 @@ func (r *Radix) splitnode(parent *node.Node, dv int, prefix []byte) (*node.Node,
 	// new split node
 	nn := node.New()
 	nn.NodeOffset = parent.NodeOffset
-
-	// move across tx id to existing node
-	nn.SetTxid(parent.Txid())
-	parent.SetTxid(0)
 
 	// allocate space for existing existing node
 	parent.NodeOffset, err = r.t.Free.Reserve(node.NodeSize)

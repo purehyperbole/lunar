@@ -3,6 +3,7 @@ package lunar
 import (
 	"errors"
 
+	"github.com/purehyperbole/lunar/header"
 	"github.com/purehyperbole/lunar/node"
 	"github.com/purehyperbole/lunar/radix"
 )
@@ -53,7 +54,12 @@ func (tx *Tx) Get(key []byte) ([]byte, error) {
 		return nil, radix.ErrNotFound
 	}
 
-	return tx.db.data.Read(n.Size(), n.Offset())
+	data, err := tx.db.data.Read(n.Size(), n.Offset())
+	if err != nil {
+		return nil, err
+	}
+
+	return data[header.HeaderSize:], nil
 }
 
 // Set : set value by key
@@ -93,28 +99,28 @@ func (tx *Tx) Commit() error {
 		defer tx.db.wlock.Unlock(offset)
 	}
 
-	for offset, n := range wc {
-		// skip node if its new
-		if n.Txid() == 0 {
-			continue
-		}
-
+	for offset := range wc {
 		// compare nodes written to snapshot (n) with whats currently persisted (pn)
 		pn, err := tx.db.index.Read(offset)
 		if err != nil {
 			return err
 		}
 
+		pdata, err := tx.db.data.Read(header.HeaderSize, pn.Offset())
+		if err != nil {
+			return nil
+		}
+
+		phdr := header.Deserialize(pdata)
+
 		// check tx id hasn't changed
-		if pn.Txid() != n.Txid() {
+		if phdr.Xmax() == 0 && phdr.Xmin() < tx.txid {
 			return ErrTxWriteConflict
 		}
 	}
 
 	// update the nodes transaction id and write them to disk
 	for _, n := range wc {
-		n.SetTxid(tx.txid)
-
 		// write index data
 		err := tx.db.index.Write(n)
 		if err != nil {
@@ -139,8 +145,19 @@ func (tx *Tx) Rollback() error {
 
 func (tx *Tx) update(n *node.Node, key, value []byte) error {
 	// TODO : release allocated space when all transactions using that data have completed
-	// db.data.Free.Release(n.Size(), n.Offset())
-	sz := int64(len(value))
+
+	// create header and merge with data
+	var hdr *header.Header
+	hdr.SetXmin(tx.txid)
+	hdr.SetPrevious(n.Offset())
+
+	data := header.Prepend(hdr, value)
+	sz := int64(len(data))
+
+	err := tx.updatexmax(n)
+	if err != nil {
+		return err
+	}
 
 	off, err := tx.db.data.Free.Reserve(sz)
 	if err != nil {
@@ -150,10 +167,24 @@ func (tx *Tx) update(n *node.Node, key, value []byte) error {
 	n.SetOffset(off)
 	n.SetSize(sz)
 
-	err = tx.db.data.Write(value, n.Offset())
+	err = tx.db.data.Write(data, n.Offset())
 	if err != nil {
 		return err
 	}
 
 	return tx.snapshot.index.Write(n)
+}
+
+func (tx *Tx) updatexmax(n *node.Node) error {
+	data, err := tx.db.data.Read(header.HeaderSize, n.Offset())
+	if err != nil {
+		return err
+	}
+
+	hdr := header.Deserialize(data)
+	hdr.SetXmax(tx.txid)
+
+	data = header.Serialize(hdr)
+
+	return tx.db.data.Write(data, n.Offset())
 }

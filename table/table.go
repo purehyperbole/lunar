@@ -87,17 +87,6 @@ func (t *Table) Sync() error {
 	return nil
 }
 
-// Snapshot : creates a snapshot of the table used for transactions
-func (t *Table) Snapshot() *Table {
-	s := make([]byte, len(t.mapping))
-	copy(s, t.mapping)
-
-	return &Table{
-		Free:    t.Free,
-		mapping: s,
-	}
-}
-
 // Close : close table file descriptor and unmap
 func (t *Table) Close() error {
 	err := t.Sync()
