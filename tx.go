@@ -54,6 +54,7 @@ func (tx *Tx) Get(key []byte) ([]byte, error) {
 		return nil, radix.ErrNotFound
 	}
 
+	// TODO : ensure transaction is reading the correct version of data
 	data, err := tx.db.data.Read(n.Size(), n.Offset())
 	if err != nil {
 		return nil, err
