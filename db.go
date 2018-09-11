@@ -52,7 +52,13 @@ func (db *DB) View(tx func(*Tx) error) error {
 // Update : creates a writable transaction
 func (db *DB) Update(tx func(*Tx) error) error {
 	t := NewTransaction(db, false)
-	return tx(t)
+
+	err := tx(t)
+	if err != nil {
+		return err
+	}
+
+	return t.Commit()
 }
 
 // Get : get a value by key
@@ -114,10 +120,11 @@ func (db *DB) update(n *node.Node, key, value []byte) error {
 		return err
 	}
 
-	return db.index.Modify(n, n.NodeOffset)
+	return db.index.Write(n)
 }
 
 func (db *DB) newtxid() uint64 {
+	txid := atomic.LoadUint64(&db.tx)
 	atomic.AddUint64(&db.tx, 1)
-	return atomic.LoadUint64(&db.tx)
+	return txid
 }

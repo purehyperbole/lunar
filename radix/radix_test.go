@@ -89,8 +89,7 @@ func TestRadixLookup(t *testing.T) {
 		{
 			"derivative",
 			3,
-			[]testvalue{{"test", "1234", "est"},
-				{"test1234", "bacon", "est"}},
+			[]testvalue{{"test", "1234", "est"}, {"test1234", "bacon", "est"}},
 			[]testvalue{{"test1234", "bacon", "234"}},
 		},
 		{
@@ -135,7 +134,6 @@ func TestRadixLookup(t *testing.T) {
 			assert.NotNil(t, r)
 
 			for _, kv := range tc.Existing {
-
 				_, err := r.Insert([]byte(kv.Key))
 				assert.Nil(t, err)
 			}

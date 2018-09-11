@@ -72,6 +72,16 @@ func (tx *Tx) Set(key, value []byte) error {
 	return tx.update(n, k, value)
 }
 
+// Gets : get a value by string key
+func (tx *Tx) Gets(key string) ([]byte, error) {
+	return tx.Get([]byte(key))
+}
+
+// Sets : set a value by string key
+func (tx *Tx) Sets(key string, value []byte) error {
+	return tx.Set([]byte(key), value)
+}
+
 // Commit : commits the transaction
 func (tx *Tx) Commit() error {
 	wc := tx.snapshot.index.WriteCache()
@@ -83,29 +93,30 @@ func (tx *Tx) Commit() error {
 		defer tx.db.wlock.Unlock(offset)
 	}
 
-	for offset, data := range wc {
-		// compare nodes written to snapshot with whats currently persisted
-		ndata, err := tx.db.index.Read(offset)
+	for offset, n := range wc {
+		// skip node if its new
+		if n.Txid() == 0 {
+			continue
+		}
+
+		// compare nodes written to snapshot (n) with whats currently persisted (pn)
+		pn, err := tx.db.index.Read(offset)
 		if err != nil {
 			return err
 		}
-
-		cn := node.Deserialize(ndata)
-
-		sndata, err := tx.snapshot.index.Read(offset)
-		if err != nil {
-			return err
-		}
-
-		sn := node.Deserialize(sndata)
 
 		// check tx id hasn't changed
-		if cn.Txid() != sn.Txid() {
+		if pn.Txid() != n.Txid() {
 			return ErrTxWriteConflict
 		}
+	}
+
+	// update the nodes transaction id and write them to disk
+	for _, n := range wc {
+		n.SetTxid(tx.txid)
 
 		// write index data
-		err = tx.db.data.Write(data, offset)
+		err := tx.db.index.Write(n)
 		if err != nil {
 			return err
 		}
@@ -117,6 +128,12 @@ func (tx *Tx) Commit() error {
 // Rollback : rolls back the transaction
 func (tx *Tx) Rollback() error {
 	// TODO : track and free data writen to data file & reserved space on index
+	wc := tx.snapshot.index.WriteCache()
+
+	for _, n := range wc {
+		tx.db.data.Free.Release(n.Size(), n.Offset())
+	}
+
 	return nil
 }
 
@@ -132,12 +149,11 @@ func (tx *Tx) update(n *node.Node, key, value []byte) error {
 
 	n.SetOffset(off)
 	n.SetSize(sz)
-	n.SetTxid(tx.txid)
 
 	err = tx.db.data.Write(value, n.Offset())
 	if err != nil {
 		return err
 	}
 
-	return tx.snapshot.index.Modify(n, n.NodeOffset)
+	return tx.snapshot.index.Write(n)
 }

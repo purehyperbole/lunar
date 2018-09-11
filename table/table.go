@@ -28,11 +28,9 @@ var (
 
 // Table : mmaped file
 type Table struct {
-	Free     *FreeList
-	fd       *os.File
-	mapping  []byte
-	cache    map[int64][]byte
-	snapshot bool
+	Free    *FreeList
+	fd      *os.File
+	mapping []byte
 }
 
 // New : loads a new table
@@ -52,55 +50,6 @@ func New(path string) (*Table, error) {
 
 // Read : reads from table at a given offset
 func (t *Table) Read(size, offset int64) ([]byte, error) {
-	if t.snapshot {
-		return t.cacheread(size, offset)
-	}
-
-	return t.read(size, offset)
-}
-
-// Write : writes to table at a given offset
-func (t *Table) Write(data []byte, offset int64) error {
-	if t.snapshot {
-		return t.cachewrite(data, offset)
-	}
-
-	return t.write(data, offset)
-}
-
-// Snapshot : creates a snapshot of the table used for transactions
-func (t *Table) Snapshot() *Table {
-	s := make([]byte, len(t.mapping))
-	copy(s, t.mapping)
-
-	return &Table{
-		mapping:  s,
-		snapshot: true,
-		cache:    make(map[int64][]byte),
-	}
-}
-
-// WriteCache : all pending transactional writes
-func (t *Table) WriteCache() map[int64][]byte {
-	return t.cache
-}
-
-// Close : close table file descriptor and unmap
-func (t *Table) Close() error {
-	err := t.sync()
-	if err != nil {
-		return err
-	}
-
-	err = t.munmap()
-	if err != nil {
-		return err
-	}
-
-	return t.fd.Close()
-}
-
-func (t *Table) read(size, offset int64) ([]byte, error) {
 	if int64(len(t.mapping)) < (offset + size) {
 		return nil, ErrBoundsViolation
 	}
@@ -108,7 +57,8 @@ func (t *Table) read(size, offset int64) ([]byte, error) {
 	return t.mapping[offset:(offset + size)], nil
 }
 
-func (t *Table) write(data []byte, offset int64) error {
+// Write : writes to table at a given offset
+func (t *Table) Write(data []byte, offset int64) error {
 	if len(data) > MaxStep {
 		return ErrDataSizeTooLarge
 	}
@@ -125,20 +75,42 @@ func (t *Table) write(data []byte, offset int64) error {
 	return nil
 }
 
-func (t *Table) cacheread(size, offset int64) ([]byte, error) {
-	ci := t.cache[offset]
+// Sync : syncs the tables mapping to disk
+func (t *Table) Sync() error {
+	sh := (*reflect.SliceHeader)(unsafe.Pointer(&t.mapping))
 
-	if ci != nil {
-		return ci, nil
+	_, _, err := syscall.Syscall(syscall.SYS_MSYNC, sh.Data, uintptr(sh.Len), syscall.MS_SYNC)
+	if err != 0 {
+		return syscall.Errno(err)
 	}
 
-	return t.read(size, offset)
+	return nil
 }
 
-func (t *Table) cachewrite(data []byte, offset int64) error {
-	t.cache[offset] = data
+// Snapshot : creates a snapshot of the table used for transactions
+func (t *Table) Snapshot() *Table {
+	s := make([]byte, len(t.mapping))
+	copy(s, t.mapping)
 
-	return nil
+	return &Table{
+		Free:    t.Free,
+		mapping: s,
+	}
+}
+
+// Close : close table file descriptor and unmap
+func (t *Table) Close() error {
+	err := t.Sync()
+	if err != nil {
+		return err
+	}
+
+	err = t.munmap()
+	if err != nil {
+		return err
+	}
+
+	return t.fd.Close()
 }
 
 func (t *Table) open(path string) error {
@@ -173,17 +145,6 @@ func (t *Table) mremap() error {
 
 	// doesn't work, returns invalid argument. incorrect flags/args?
 	_, _, err := syscall.Syscall(syscall.SYS_MREMAP, sh.Data, uintptr(sh.Len), 0)
-	if err != 0 {
-		return syscall.Errno(err)
-	}
-
-	return nil
-}
-
-func (t *Table) sync() error {
-	sh := (*reflect.SliceHeader)(unsafe.Pointer(&t.mapping))
-
-	_, _, err := syscall.Syscall(syscall.SYS_MSYNC, sh.Data, uintptr(sh.Len), syscall.MS_SYNC)
 	if err != 0 {
 		return syscall.Errno(err)
 	}

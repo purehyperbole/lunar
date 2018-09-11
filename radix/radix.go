@@ -16,13 +16,20 @@ var (
 
 // Radix : an uncompressed radix tree utilizing a persistent underlying table for storage
 type Radix struct {
-	t     *table.Table
-	nodes int
+	t        *table.Table
+	cache    map[int64]*node.Node
+	snapshot bool
+	nodes    int
 }
 
 // New : creates a new radix tree backed by a persistent table
 func New(table *table.Table) *Radix {
-	return &Radix{table, 1}
+	return &Radix{
+		t:        table,
+		cache:    nil,
+		snapshot: false,
+		nodes:    1,
+	}
 }
 
 // Lookup : returns the index and size for a particular key
@@ -56,18 +63,16 @@ func (r *Radix) lookup(key []byte) (*node.Node, int, int, error) {
 		}
 		i++
 
-		ndata, err := r.t.Read(node.NodeSize, next)
+		n, err = r.Read(next)
 		if err != nil {
 			return nil, 0, 0, err
 		}
-
-		n = node.Deserialize(ndata)
 
 		if n.HasPrefix() {
 			dv = divergence(n.Prefix(), key[i:])
 
 			if len(n.Prefix()) > dv {
-				n.NodeOffset = next
+				// n.NodeOffset = next
 				return n, i, dv, nil
 			}
 
@@ -80,7 +85,7 @@ func (r *Radix) lookup(key []byte) (*node.Node, int, int, error) {
 		}
 	}
 
-	n.NodeOffset = next
+	// n.NodeOffset = next
 
 	return n, i, dv, nil
 }
@@ -108,15 +113,51 @@ func (r *Radix) Insert(key []byte) (*node.Node, error) {
 }
 
 // Read : read a node at a given offset
-func (r *Radix) Read(offset int64) ([]byte, error) {
-	return r.t.Read(node.NodeSize, offset)
+func (r *Radix) Read(offset int64) (*node.Node, error) {
+	if r.snapshot {
+		return r.cacheread(offset)
+	}
+
+	return r.read(offset)
 }
 
-// Modify : overwrites a node at a given offset
-func (r *Radix) Modify(n *node.Node, offset int64) error {
-	ndata := node.Serialize(n)
+// Write : write a node's data at a given offset
+func (r *Radix) Write(n *node.Node) error {
+	if r.snapshot {
+		return r.cachewrite(n)
+	}
 
-	return r.t.Write(ndata, offset)
+	data := node.Serialize(n)
+
+	return r.t.Write(data, n.NodeOffset)
+}
+
+func (r *Radix) read(offset int64) (*node.Node, error) {
+	data, err := r.t.Read(node.NodeSize, offset)
+	if err != nil {
+		return nil, err
+	}
+
+	n := node.Deserialize(data)
+	n.NodeOffset = offset
+
+	return n, nil
+}
+
+func (r *Radix) cacheread(offset int64) (*node.Node, error) {
+	ci := r.cache[offset]
+
+	if ci != nil {
+		return ci, nil
+	}
+
+	return r.read(offset)
+}
+
+func (r *Radix) cachewrite(n *node.Node) error {
+	r.cache[n.NodeOffset] = n
+
+	return nil
 }
 
 // Delete : delete a key from the radix tree
@@ -128,14 +169,21 @@ func (r *Radix) Delete(key []byte) (int64, int64, error) {
 // Snapshot : snapshots the contents of the index table
 func (r *Radix) Snapshot() *Radix {
 	return &Radix{
-		t:     r.t.Snapshot(),
-		nodes: r.nodes,
+		t:        r.t.Snapshot(),
+		snapshot: true,
+		cache:    make(map[int64]*node.Node),
+		nodes:    r.nodes,
 	}
 }
 
+// Sync : syncs the underlying tables data to disk
+func (r *Radix) Sync() error {
+	return r.t.Sync()
+}
+
 // WriteCache : all writes that have been submitted in a transaction
-func (r *Radix) WriteCache() map[int64][]byte {
-	return r.t.WriteCache()
+func (r *Radix) WriteCache() map[int64]*node.Node {
+	return r.cache
 }
 
 // Close : close the underlying table
@@ -152,22 +200,19 @@ func (r *Radix) root() (*node.Node, error) {
 	// create root node if it doesn't exist
 	if r.t.Free.Empty() {
 		n := node.New()
-		ndata := node.Serialize(n)
 
-		_, err := r.t.Free.Reserve(int64(len(ndata)))
+		_, err := r.t.Free.Reserve(node.NodeSize)
 		if err != nil {
 			return nil, err
 		}
 
-		return n, r.t.Write(ndata, int64(len(ndata)))
+		return n, r.Write(n)
 	}
 
-	ndata, err := r.t.Read(node.NodeSize, 0)
+	n, err := r.Read(0)
 	if err != nil {
 		return nil, err
 	}
-
-	n := node.Deserialize(ndata)
 
 	return n, nil
 }
@@ -185,15 +230,13 @@ func (r *Radix) createnode(parent *node.Node, prefix []byte) (*node.Node, error)
 			n.SetPrefix(pfx[1:])
 		}
 
-		ndata := node.Serialize(n)
-
 		n.NodeOffset, err = r.t.Free.Reserve(node.NodeSize)
 		if err != nil {
 			return nil, err
 		}
 
 		// write new node
-		err = r.t.Write(ndata, n.NodeOffset)
+		err = r.Write(n)
 		if err != nil {
 			return nil, err
 		}
@@ -201,9 +244,7 @@ func (r *Radix) createnode(parent *node.Node, prefix []byte) (*node.Node, error)
 		// update current node with offset to new node
 		parent.SetNext(pfx[0], n.NodeOffset)
 
-		ndata = node.Serialize(parent)
-
-		err = r.t.Write(ndata, parent.NodeOffset)
+		err = r.Write(parent)
 		if err != nil {
 			return nil, err
 		}
@@ -221,6 +262,10 @@ func (r *Radix) splitnode(parent *node.Node, dv int, prefix []byte) (*node.Node,
 	// new split node
 	nn := node.New()
 	nn.NodeOffset = parent.NodeOffset
+
+	// move across tx id to existing node
+	nn.SetTxid(parent.Txid())
+	parent.SetTxid(0)
 
 	// allocate space for existing existing node
 	parent.NodeOffset, err = r.t.Free.Reserve(node.NodeSize)
@@ -240,9 +285,7 @@ func (r *Radix) splitnode(parent *node.Node, dv int, prefix []byte) (*node.Node,
 	}
 
 	// write existing node
-	ndata := node.Serialize(parent)
-
-	err = r.t.Write(ndata, parent.NodeOffset)
+	err = r.Write(parent)
 	if err != nil {
 		return nil, err
 	}
@@ -256,9 +299,7 @@ func (r *Radix) splitnode(parent *node.Node, dv int, prefix []byte) (*node.Node,
 }
 
 func (r *Radix) twowaysplit(n *node.Node) (*node.Node, error) {
-	ndata := node.Serialize(n)
-
-	err := r.t.Write(ndata, n.NodeOffset)
+	err := r.Write(n)
 	if err != nil {
 		return nil, err
 	}
@@ -305,12 +346,10 @@ func (r *Radix) graphviz(gvoutput *[]string, gvzc *int, previous string, n *node
 		if e != 0 {
 			(*gvzc)++
 
-			ndata, err := r.t.Read(node.NodeSize, e)
+			n, err := r.Read(e)
 			if err != nil {
 				return err
 			}
-
-			n := node.Deserialize(ndata)
 
 			(*gvoutput) = append((*gvoutput), fmt.Sprintf("  \"%s\" -> \"[%d] %s\" [label=\"%s\"]", previous, *gvzc, string(n.Prefix()), string(byte(i))))
 

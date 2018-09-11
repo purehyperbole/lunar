@@ -2,6 +2,8 @@ package node
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"unsafe"
 )
 
@@ -53,7 +55,7 @@ func (n *Node) SetNext(b byte, index int64) {
 // Empty : returns true if there is no data associated with this node
 func (n *Node) Empty() bool {
 	// may be faster to assign information on write rather than looping
-	if n.leaf == 1 {
+	if n.offset != 0 || n.size != 0 {
 		return false
 	}
 
@@ -176,4 +178,30 @@ func Deserialize(data []byte) *Node {
 		size:   *(*int64)(unsafe.Pointer(&data[4072])),
 		txid:   *(*uint64)(unsafe.Pointer(&data[4080])),
 	}
+}
+
+// Print : output the nodes data to stdout
+func Print(n *Node) {
+	output := []string{"{"}
+
+	output = append(output, fmt.Sprintf("	Node Offset: %d", n.NodeOffset))
+	output = append(output, fmt.Sprintf("	Is Leaf: %d", n.leaf))
+	output = append(output, fmt.Sprintf("	Prefix Length: %d", n.plen))
+	output = append(output, fmt.Sprintf("	Prefix: %s", string(n.Prefix())))
+	output = append(output, fmt.Sprintf("	Data Offset: %d", n.offset))
+	output = append(output, fmt.Sprintf("	Data Size: %d", n.size))
+	output = append(output, fmt.Sprintf("	Transaction ID: %d", n.txid))
+
+	output = append(output, "	Edges: [")
+
+	for char, offset := range n.edges {
+		if offset != 0 {
+			output = append(output, fmt.Sprintf("		%s: %d", string(byte(char)), offset))
+		}
+	}
+
+	output = append(output, "	]")
+	output = append(output, "}")
+
+	fmt.Println(strings.Join(output, "\n"))
 }
