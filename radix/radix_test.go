@@ -52,19 +52,25 @@ func TestRadixInsert(t *testing.T) {
 			}
 
 			for _, kv := range tc.Creates {
-				_, err := r.Insert([]byte(kv.Key))
+				n, err := r.Insert([]byte(kv.Key))
 				assert.Nil(t, err)
 
-				n, err := r.Lookup([]byte(kv.Key))
+				// Insert leaves a page lock enabled, so we need to unlock it here
+				r.t.PageLock().Unlock(n.NodeOffset)
+
+				n, err = r.Lookup([]byte(kv.Key))
 				assert.Nil(t, err)
 				assert.NotNil(t, n)
 			}
 
 			for _, kv := range tc.Updates {
-				_, err := r.Insert([]byte(kv.Key))
+				n, err := r.Insert([]byte(kv.Key))
 				assert.Nil(t, err)
 
-				n, err := r.Lookup([]byte(kv.Key))
+				// Insert leaves a page lock enabled, so we need to unlock it here
+				r.t.PageLock().Unlock(n.NodeOffset)
+
+				n, err = r.Lookup([]byte(kv.Key))
 				assert.Nil(t, err)
 				assert.NotNil(t, n)
 			}
@@ -134,8 +140,10 @@ func TestRadixLookup(t *testing.T) {
 			assert.NotNil(t, r)
 
 			for _, kv := range tc.Existing {
-				_, err := r.Insert([]byte(kv.Key))
+				n, err := r.Insert([]byte(kv.Key))
 				assert.Nil(t, err)
+				// Insert leaves a page lock enabled, so we need to unlock it here
+				r.t.PageLock().Unlock(n.NodeOffset)
 			}
 
 			assert.Equal(t, tc.ExpectedNodes, r.nodes)

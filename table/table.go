@@ -29,6 +29,7 @@ var (
 // Table : mmaped file
 type Table struct {
 	Free    *FreeList
+	plock   *PageLock
 	fd      *os.File
 	mapping []byte
 }
@@ -37,6 +38,7 @@ type Table struct {
 func New(path string) (*Table, error) {
 	t := Table{
 		Free:    NewFreeList(MaxTableSize),
+		plock:   NewPageLock(),
 		mapping: make([]byte, 0),
 	}
 
@@ -73,6 +75,11 @@ func (t *Table) Write(data []byte, offset int64) error {
 	copy(t.mapping[offset:], data)
 
 	return nil
+}
+
+// PageLock : returns the tables page lock
+func (t *Table) PageLock() *PageLock {
+	return t.plock
 }
 
 // Sync : syncs the tables mapping to disk

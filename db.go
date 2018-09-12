@@ -12,7 +12,6 @@ import (
 type DB struct {
 	index *radix.Radix
 	data  *table.Table
-	wlock *WriteLock
 	tx    uint64
 }
 
@@ -28,7 +27,6 @@ func Open(path string) (*DB, error) {
 	return &DB{
 		index: radix.New(idxt),
 		data:  dbt,
-		wlock: NewWriteLock(),
 	}, nil
 }
 
@@ -95,13 +93,6 @@ func (db *DB) Gets(key string) ([]byte, error) {
 // Sets : set a value by string key
 func (db *DB) Sets(key string, value []byte) error {
 	return db.Set([]byte(key), value)
-}
-
-func (db *DB) snapshot() *DB {
-	return &DB{
-		index: db.index.Snapshot(),
-		data:  db.data,
-	}
 }
 
 func (db *DB) update(n *node.Node, key, value []byte) error {

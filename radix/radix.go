@@ -17,7 +17,6 @@ var (
 // Radix : an uncompressed radix tree utilizing a persistent underlying table for storage
 type Radix struct {
 	t        *table.Table
-	cache    map[int64]*node.Node
 	snapshot bool
 	nodes    int
 }
@@ -26,7 +25,6 @@ type Radix struct {
 func New(table *table.Table) *Radix {
 	return &Radix{
 		t:        table,
-		cache:    nil,
 		snapshot: false,
 		nodes:    1,
 	}
@@ -39,6 +37,9 @@ func (r *Radix) Lookup(key []byte) (*node.Node, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// unlock the returned page
+	r.t.PageLock().Unlock(n.NodeOffset)
 
 	if len(key) > pos {
 		return nil, ErrNotFound
@@ -57,13 +58,16 @@ func (r *Radix) lookup(key []byte) (*node.Node, int, int, error) {
 	}
 
 	for n.Next(key[i]) != 0 {
+		// unlock current node before reading next
+		r.t.PageLock().Unlock(n.NodeOffset)
+
 		next = n.Next(key[i])
 		if next == 0 {
 			return nil, 0, 0, ErrNotFound
 		}
 		i++
 
-		n, err = r.Read(next)
+		n, err = r.ReadExclusive(next)
 		if err != nil {
 			return nil, 0, 0, err
 		}
@@ -72,7 +76,6 @@ func (r *Radix) lookup(key []byte) (*node.Node, int, int, error) {
 			dv = divergence(n.Prefix(), key[i:])
 
 			if len(n.Prefix()) > dv {
-				// n.NodeOffset = next
 				return n, i, dv, nil
 			}
 
@@ -84,8 +87,6 @@ func (r *Radix) lookup(key []byte) (*node.Node, int, int, error) {
 			break
 		}
 	}
-
-	// n.NodeOffset = next
 
 	return n, i, dv, nil
 }
@@ -114,25 +115,6 @@ func (r *Radix) Insert(key []byte) (*node.Node, error) {
 
 // Read : read a node at a given offset
 func (r *Radix) Read(offset int64) (*node.Node, error) {
-	if r.snapshot {
-		return r.cacheread(offset)
-	}
-
-	return r.read(offset)
-}
-
-// Write : write a node's data at a given offset
-func (r *Radix) Write(n *node.Node) error {
-	if r.snapshot {
-		return r.cachewrite(n)
-	}
-
-	data := node.Serialize(n)
-
-	return r.t.Write(data, n.NodeOffset)
-}
-
-func (r *Radix) read(offset int64) (*node.Node, error) {
 	data, err := r.t.Read(node.NodeSize, offset)
 	if err != nil {
 		return nil, err
@@ -144,20 +126,23 @@ func (r *Radix) read(offset int64) (*node.Node, error) {
 	return n, nil
 }
 
-func (r *Radix) cacheread(offset int64) (*node.Node, error) {
-	ci := r.cache[offset]
+// Write : write a node's data at a given offset
+func (r *Radix) Write(n *node.Node) error {
+	data := node.Serialize(n)
 
-	if ci != nil {
-		return ci, nil
-	}
-
-	return r.read(offset)
+	return r.t.Write(data, n.NodeOffset)
 }
 
-func (r *Radix) cachewrite(n *node.Node) error {
-	r.cache[n.NodeOffset] = n
+// ReadExclusive : locks a given page and reads it. Does not release lock on return
+func (r *Radix) ReadExclusive(offset int64) (*node.Node, error) {
+	r.t.PageLock().Lock(offset)
+	return r.Read(offset)
+}
 
-	return nil
+// WriteExclusive : locks a given page and writes it. Does not release lock on return
+func (r *Radix) WriteExclusive(n *node.Node) error {
+	r.t.PageLock().Lock(n.NodeOffset)
+	return r.Write(n)
 }
 
 // Delete : delete a key from the radix tree
@@ -166,24 +151,9 @@ func (r *Radix) Delete(key []byte) (int64, int64, error) {
 	return -1, -1, nil
 }
 
-// Snapshot : snapshots the contents of the index table
-func (r *Radix) Snapshot() *Radix {
-	return &Radix{
-		t:        r.t,
-		snapshot: true,
-		cache:    make(map[int64]*node.Node),
-		nodes:    r.nodes,
-	}
-}
-
 // Sync : syncs the underlying tables data to disk
 func (r *Radix) Sync() error {
 	return r.t.Sync()
-}
-
-// WriteCache : all writes that have been submitted in a transaction
-func (r *Radix) WriteCache() map[int64]*node.Node {
-	return r.cache
 }
 
 // Close : close the underlying table
@@ -206,10 +176,10 @@ func (r *Radix) root() (*node.Node, error) {
 			return nil, err
 		}
 
-		return n, r.Write(n)
+		return n, r.WriteExclusive(n)
 	}
 
-	n, err := r.Read(0)
+	n, err := r.ReadExclusive(0)
 	if err != nil {
 		return nil, err
 	}
@@ -235,8 +205,8 @@ func (r *Radix) createnode(parent *node.Node, prefix []byte) (*node.Node, error)
 			return nil, err
 		}
 
-		// write new node
-		err = r.Write(n)
+		// write new node and lock it
+		err = r.WriteExclusive(n)
 		if err != nil {
 			return nil, err
 		}
@@ -248,6 +218,9 @@ func (r *Radix) createnode(parent *node.Node, prefix []byte) (*node.Node, error)
 		if err != nil {
 			return nil, err
 		}
+
+		// unlock the parent node
+		r.t.PageLock().Unlock(parent.NodeOffset)
 
 		parent = n
 		r.nodes++

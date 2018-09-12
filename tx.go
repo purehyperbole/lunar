@@ -19,25 +19,29 @@ var (
 type Tx struct {
 	txid     uint64
 	db       *DB
-	snapshot *DB
+	reads    []alloc
+	writes   []write
 	readonly bool
 }
 
-type allocation struct {
-	Size   int64
-	Offset int64
+type write struct {
+	inserted alloc
+	previous alloc
+}
+
+type alloc struct {
+	offset int64
+	size   int64
 }
 
 // NewTransaction : creates a new transaction
 func NewTransaction(db *DB, readonly bool) *Tx {
 	tx := &Tx{
+		txid:     db.newtxid(),
 		db:       db,
-		snapshot: db.snapshot(),
+		reads:    make([]alloc, 0),
+		writes:   make([]write, 0),
 		readonly: readonly,
-	}
-
-	if !readonly {
-		tx.txid = db.newtxid()
 	}
 
 	return tx
@@ -45,7 +49,7 @@ func NewTransaction(db *DB, readonly bool) *Tx {
 
 // Get : get a value by key
 func (tx *Tx) Get(key []byte) ([]byte, error) {
-	n, err := tx.snapshot.index.Lookup(key)
+	n, err := tx.db.index.Lookup(key)
 	if err != nil {
 		return nil, err
 	}
@@ -60,6 +64,8 @@ func (tx *Tx) Get(key []byte) ([]byte, error) {
 		return nil, err
 	}
 
+	tx.addread(n.Offset())
+
 	return data[header.HeaderSize:], nil
 }
 
@@ -71,7 +77,7 @@ func (tx *Tx) Set(key, value []byte) error {
 
 	k := []byte(key)
 
-	n, err := tx.snapshot.index.Insert(k)
+	n, err := tx.db.index.Insert(k)
 	if err != nil && err != radix.ErrNotFound {
 		return err
 	}
@@ -91,21 +97,8 @@ func (tx *Tx) Sets(key string, value []byte) error {
 
 // Commit : commits the transaction
 func (tx *Tx) Commit() error {
-	wc := tx.snapshot.index.WriteCache()
-
-	// lock all nodes we're going to write to
-	for offset := range wc {
-		// TODO : implement mvcc xmin and xmax checks
-		tx.db.wlock.Lock(offset)
-		defer tx.db.wlock.Unlock(offset)
-	}
-
-	for offset := range wc {
+	for _, write := range tx.writes {
 		// compare nodes written to snapshot (n) with whats currently persisted (pn)
-		pn, err := tx.db.index.Read(offset)
-		if err != nil {
-			return err
-		}
 
 		pdata, err := tx.db.data.Read(header.HeaderSize, pn.Offset())
 		if err != nil {
@@ -135,10 +128,9 @@ func (tx *Tx) Commit() error {
 // Rollback : rolls back the transaction
 func (tx *Tx) Rollback() error {
 	// TODO : track and free data writen to data file & reserved space on index
-	wc := tx.snapshot.index.WriteCache()
 
-	for _, n := range wc {
-		tx.db.data.Free.Release(n.Size(), n.Offset())
+	for _, w := range tx.writes {
+		tx.db.data.Free.Release(w..Size(), n.Offset())
 	}
 
 	return nil
@@ -147,23 +139,15 @@ func (tx *Tx) Rollback() error {
 func (tx *Tx) update(n *node.Node, key, value []byte) error {
 	// TODO : release allocated space when all transactions using that data have completed
 
-	// create header and merge with data
-	var hdr *header.Header
-	hdr.SetXmin(tx.txid)
-	hdr.SetPrevious(n.Offset())
 
-	data := header.Prepend(hdr, value)
-	sz := int64(len(data))
-
-	err := tx.updatexmax(n)
-	if err != nil {
-		return err
-	}
 
 	off, err := tx.db.data.Free.Reserve(sz)
 	if err != nil {
 		return err
 	}
+
+	// log the write
+	tx.addwrite(off, sz, n.Offset(), n.Size())
 
 	n.SetOffset(off)
 	n.SetSize(sz)
@@ -173,7 +157,7 @@ func (tx *Tx) update(n *node.Node, key, value []byte) error {
 		return err
 	}
 
-	return tx.snapshot.index.Write(n)
+	return tx.db.index.Write(n)
 }
 
 func (tx *Tx) updatexmax(n *node.Node) error {
@@ -188,4 +172,17 @@ func (tx *Tx) updatexmax(n *node.Node) error {
 	data = header.Serialize(hdr)
 
 	return tx.db.data.Write(data, n.Offset())
+}
+
+func (tx *Tx) createheader(n *node.Node)
+
+func (tx *Tx) addread(offset int64) {
+	tx.reads = append(tx.reads, alloc{offset: offset})
+}
+
+func (tx *Tx) addwrite(insertedoff, insertedsz, previousoff, previoussz int64) {
+	tx.writes = append(tx.writes, write{
+		alloc{insertedoff, insertedsz},
+		alloc{previousoff, previoussz},
+	})
 }
