@@ -111,7 +111,7 @@ func (db *DB) update(n *node.Node, key, value []byte) error {
 		return err
 	}
 
-	return db.index.Write(n)
+	return db.index.WriteUnlock(n)
 }
 
 func (db *DB) newtxid() uint64 {

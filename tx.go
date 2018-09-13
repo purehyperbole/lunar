@@ -97,26 +97,39 @@ func (tx *Tx) Sets(key string, value []byte) error {
 
 // Commit : commits the transaction
 func (tx *Tx) Commit() error {
-	for _, write := range tx.writes {
-		// compare nodes written to snapshot (n) with whats currently persisted (pn)
+	hdrs := make(map[int64]*header.Header)
 
-		pdata, err := tx.db.data.Read(header.HeaderSize, pn.Offset())
+	pl := tx.db.data.PageLock()
+
+	// lock all entries that have been modified
+	for _, w := range tx.writes {
+		pl.Lock(w.previous.offset, false)
+		defer pl.Unlock(w.previous.offset, false)
+	}
+
+	// compare nodes written whats currently persisted (pn)
+	for _, w := range tx.writes {
+		pdata, err := tx.db.data.Read(header.HeaderSize, w.previous.offset)
 		if err != nil {
 			return nil
 		}
 
 		phdr := header.Deserialize(pdata)
 
-		// check tx id hasn't changed
+		// check xmax hasn't been updated
 		if phdr.Xmax() == 0 && phdr.Xmin() < tx.txid {
 			return ErrTxWriteConflict
 		}
+
+		hdrs[w.previous.offset] = phdr
 	}
 
-	// update the nodes transaction id and write them to disk
-	for _, n := range wc {
-		// write index data
-		err := tx.db.index.Write(n)
+	for offset, hdr := range hdrs {
+		hdr.SetXmax(tx.txid)
+
+		data := header.Serialize(hdr)
+
+		err := tx.db.data.Write(data, offset)
 		if err != nil {
 			return err
 		}
@@ -130,7 +143,7 @@ func (tx *Tx) Rollback() error {
 	// TODO : track and free data writen to data file & reserved space on index
 
 	for _, w := range tx.writes {
-		tx.db.data.Free.Release(w..Size(), n.Offset())
+		tx.db.data.Free.Release(w.inserted.size, w.inserted.offset)
 	}
 
 	return nil
@@ -138,8 +151,9 @@ func (tx *Tx) Rollback() error {
 
 func (tx *Tx) update(n *node.Node, key, value []byte) error {
 	// TODO : release allocated space when all transactions using that data have completed
-
-
+	// create header and merge with data
+	data := tx.createheader(n, value)
+	sz := int64(len(data))
 
 	off, err := tx.db.data.Free.Reserve(sz)
 	if err != nil {
@@ -157,24 +171,17 @@ func (tx *Tx) update(n *node.Node, key, value []byte) error {
 		return err
 	}
 
-	return tx.db.index.Write(n)
+	// TODO : writing to index should be a final step in commit
+	return tx.db.index.WriteUnlock(n)
 }
 
-func (tx *Tx) updatexmax(n *node.Node) error {
-	data, err := tx.db.data.Read(header.HeaderSize, n.Offset())
-	if err != nil {
-		return err
-	}
+func (tx *Tx) createheader(n *node.Node, value []byte) []byte {
+	var hdr *header.Header
+	hdr.SetXmin(tx.txid)
+	hdr.SetPrevious(n.Offset())
 
-	hdr := header.Deserialize(data)
-	hdr.SetXmax(tx.txid)
-
-	data = header.Serialize(hdr)
-
-	return tx.db.data.Write(data, n.Offset())
+	return header.Prepend(hdr, value)
 }
-
-func (tx *Tx) createheader(n *node.Node)
 
 func (tx *Tx) addread(offset int64) {
 	tx.reads = append(tx.reads, alloc{offset: offset})

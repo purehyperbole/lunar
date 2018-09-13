@@ -142,6 +142,12 @@ func (r *Radix) WriteExclusive(n *node.Node) error {
 	return r.Write(n)
 }
 
+// WriteUnlock : writes a given node and releases the lock
+func (r *Radix) WriteUnlock(n *node.Node) error {
+	defer r.t.PageLock().Unlock(n.NodeOffset, false)
+	return r.Write(n)
+}
+
 func (r *Radix) read(offset int64) (*node.Node, error) {
 	data, err := r.t.Read(node.NodeSize, offset)
 	if err != nil {
