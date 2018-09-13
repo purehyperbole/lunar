@@ -33,13 +33,13 @@ func New(table *table.Table) *Radix {
 // Lookup : returns the index and size for a particular key
 // if the key isn't found, an error will be returned
 func (r *Radix) Lookup(key []byte) (*node.Node, error) {
-	n, pos, _, err := r.lookup(key)
+	n, pos, _, err := r.lookup(key, true)
 	if err != nil {
 		return nil, err
 	}
 
 	// unlock the returned page
-	r.t.PageLock().Unlock(n.NodeOffset)
+	r.t.PageLock().Unlock(n.NodeOffset, true)
 
 	if len(key) > pos {
 		return nil, ErrNotFound
@@ -48,18 +48,18 @@ func (r *Radix) Lookup(key []byte) (*node.Node, error) {
 	return n, nil
 }
 
-func (r *Radix) lookup(key []byte) (*node.Node, int, int, error) {
+func (r *Radix) lookup(key []byte, readonly bool) (*node.Node, int, int, error) {
 	var i, dv int
 	var next int64
 
-	n, err := r.root()
+	n, err := r.root(readonly)
 	if err != nil {
 		return nil, 0, 0, err
 	}
 
 	for n.Next(key[i]) != 0 {
 		// unlock current node before reading next
-		r.t.PageLock().Unlock(n.NodeOffset)
+		r.t.PageLock().Unlock(n.NodeOffset, readonly)
 
 		next = n.Next(key[i])
 		if next == 0 {
@@ -67,7 +67,7 @@ func (r *Radix) lookup(key []byte) (*node.Node, int, int, error) {
 		}
 		i++
 
-		n, err = r.ReadExclusive(next)
+		n, err = r.Read(next, readonly)
 		if err != nil {
 			return nil, 0, 0, err
 		}
@@ -93,7 +93,7 @@ func (r *Radix) lookup(key []byte) (*node.Node, int, int, error) {
 
 // Insert : adds a key to the radix tree
 func (r *Radix) Insert(key []byte) (*node.Node, error) {
-	n, i, dv, err := r.lookup(key)
+	n, i, dv, err := r.lookup(key, false)
 	if err != nil && err != ErrNotFound {
 		return nil, err
 	}
@@ -114,16 +114,13 @@ func (r *Radix) Insert(key []byte) (*node.Node, error) {
 }
 
 // Read : read a node at a given offset
-func (r *Radix) Read(offset int64) (*node.Node, error) {
-	data, err := r.t.Read(node.NodeSize, offset)
-	if err != nil {
-		return nil, err
+func (r *Radix) Read(offset int64, readonly bool) (*node.Node, error) {
+	if !readonly {
+		return r.ReadExclusive(offset)
 	}
 
-	n := node.Deserialize(data)
-	n.NodeOffset = offset
-
-	return n, nil
+	r.t.PageLock().Lock(offset, true)
+	return r.read(offset)
 }
 
 // Write : write a node's data at a given offset
@@ -135,14 +132,26 @@ func (r *Radix) Write(n *node.Node) error {
 
 // ReadExclusive : locks a given page and reads it. Does not release lock on return
 func (r *Radix) ReadExclusive(offset int64) (*node.Node, error) {
-	r.t.PageLock().Lock(offset)
-	return r.Read(offset)
+	r.t.PageLock().Lock(offset, false)
+	return r.read(offset)
 }
 
 // WriteExclusive : locks a given page and writes it. Does not release lock on return
 func (r *Radix) WriteExclusive(n *node.Node) error {
-	r.t.PageLock().Lock(n.NodeOffset)
+	r.t.PageLock().Lock(n.NodeOffset, false)
 	return r.Write(n)
+}
+
+func (r *Radix) read(offset int64) (*node.Node, error) {
+	data, err := r.t.Read(node.NodeSize, offset)
+	if err != nil {
+		return nil, err
+	}
+
+	n := node.Deserialize(data)
+	n.NodeOffset = offset
+
+	return n, nil
 }
 
 // Delete : delete a key from the radix tree
@@ -166,25 +175,30 @@ func (r *Radix) Nodes() int {
 	return r.nodes
 }
 
-func (r *Radix) root() (*node.Node, error) {
+func (r *Radix) root(readonly bool) (*node.Node, error) {
+	var n *node.Node
+	var err error
+
 	// create root node if it doesn't exist
 	if r.t.Free.Empty() {
-		n := node.New()
+		n = node.New()
 
-		_, err := r.t.Free.Reserve(node.NodeSize)
+		_, err = r.t.Free.Reserve(node.NodeSize)
 		if err != nil {
 			return nil, err
 		}
 
-		return n, r.WriteExclusive(n)
+		err = r.WriteExclusive(n)
+
+		if readonly {
+			r.t.PageLock().Unlock(0, false)
+			r.t.PageLock().Lock(0, true)
+		}
+
+		return n, err
 	}
 
-	n, err := r.ReadExclusive(0)
-	if err != nil {
-		return nil, err
-	}
-
-	return n, nil
+	return r.Read(0, readonly)
 }
 
 func (r *Radix) createnode(parent *node.Node, prefix []byte) (*node.Node, error) {
@@ -220,7 +234,7 @@ func (r *Radix) createnode(parent *node.Node, prefix []byte) (*node.Node, error)
 		}
 
 		// unlock the parent node
-		r.t.PageLock().Unlock(parent.NodeOffset)
+		r.t.PageLock().Unlock(parent.NodeOffset, false)
 
 		parent = n
 		r.nodes++
@@ -295,7 +309,7 @@ func (r *Radix) Graphviz() (string, error) {
 	gvoutput := []string{"digraph G {"}
 	gvzc := 0
 
-	root, err := r.root()
+	root, err := r.root(true)
 	if err != nil {
 		return "", err
 	}
@@ -315,7 +329,7 @@ func (r *Radix) graphviz(gvoutput *[]string, gvzc *int, previous string, n *node
 		if e != 0 {
 			(*gvzc)++
 
-			n, err := r.Read(e)
+			n, err := r.Read(e, true)
 			if err != nil {
 				return err
 			}

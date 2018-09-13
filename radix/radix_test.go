@@ -56,7 +56,7 @@ func TestRadixInsert(t *testing.T) {
 				assert.Nil(t, err)
 
 				// Insert leaves a page lock enabled, so we need to unlock it here
-				r.t.PageLock().Unlock(n.NodeOffset)
+				r.t.PageLock().Unlock(n.NodeOffset, false)
 
 				n, err = r.Lookup([]byte(kv.Key))
 				assert.Nil(t, err)
@@ -68,7 +68,7 @@ func TestRadixInsert(t *testing.T) {
 				assert.Nil(t, err)
 
 				// Insert leaves a page lock enabled, so we need to unlock it here
-				r.t.PageLock().Unlock(n.NodeOffset)
+				r.t.PageLock().Unlock(n.NodeOffset, false)
 
 				n, err = r.Lookup([]byte(kv.Key))
 				assert.Nil(t, err)
@@ -143,7 +143,7 @@ func TestRadixLookup(t *testing.T) {
 				n, err := r.Insert([]byte(kv.Key))
 				assert.Nil(t, err)
 				// Insert leaves a page lock enabled, so we need to unlock it here
-				r.t.PageLock().Unlock(n.NodeOffset)
+				r.t.PageLock().Unlock(n.NodeOffset, false)
 			}
 
 			assert.Equal(t, tc.ExpectedNodes, r.nodes)
