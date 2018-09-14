@@ -48,6 +48,22 @@ func (r *Radix) Lookup(key []byte) (*node.Node, error) {
 	return n, nil
 }
 
+// LookupForWrite : find the node if it exsits and lock it for writing at a later time
+func (r *Radix) LookupForWrite(key []byte) (*node.Node, error) {
+	n, pos, _, err := r.lookup(key, false)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(key) > pos {
+		// unlock the returned page
+		r.t.PageLock().Unlock(n.NodeOffset, false)
+		return nil, ErrNotFound
+	}
+
+	return n, nil
+}
+
 func (r *Radix) lookup(key []byte, readonly bool) (*node.Node, int, int, error) {
 	var i, dv int
 	var next int64
