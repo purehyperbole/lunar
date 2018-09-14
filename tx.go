@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/purehyperbole/lunar/header"
+	"github.com/purehyperbole/lunar/node"
 	"github.com/purehyperbole/lunar/radix"
 )
 
@@ -25,11 +26,11 @@ type Tx struct {
 }
 
 type write struct {
-	key     []byte
-	size    int64
-	offset  int64
-	psize   int64
-	poffset int64
+	key    []byte
+	node   *node.Node
+	header *header.Header
+	size   int64
+	offset int64
 }
 
 type read struct {
@@ -82,144 +83,6 @@ func (tx *Tx) Set(key, value []byte) error {
 		return ErrTxReadOnly
 	}
 
-	return tx.write(key, value)
-}
-
-// Gets : get a value by string key
-func (tx *Tx) Gets(key string) ([]byte, error) {
-	return tx.Get([]byte(key))
-}
-
-// Sets : set a value by string key
-func (tx *Tx) Sets(key string, value []byte) error {
-	return tx.Set([]byte(key), value)
-}
-
-// Commit : commits the transaction
-func (tx *Tx) Commit() error {
-	pl := tx.db.data.PageLock()
-	headers := make(map[int64]*header.Header)
-
-	// TODO: validate reads; before or after writes, remove duplicates where data was read and written?
-
-	// lookup previous data versions
-	for i := 0; i < len(tx.writes); i++ {
-		n, err := tx.db.index.Lookup(tx.writes[i].key)
-		if err == nil {
-			tx.writes[i].psize = n.Size()
-			tx.writes[i].poffset = n.Offset()
-		} else if err != radix.ErrNotFound {
-			return err
-		}
-	}
-
-	// lock previous data values
-	for _, w := range tx.writes {
-		pl.Lock(w.poffset, false)
-		defer pl.Unlock(w.poffset, false)
-	}
-
-	// read and validate old data version headers
-	for _, w := range tx.writes {
-		// if theres no previous version, dont check data
-		if w.psize == 0 && w.poffset == 0 {
-			continue
-		}
-
-		// read old version data header
-		data, err := tx.db.data.Read(header.HeaderSize, w.poffset)
-		if err != nil {
-			return nil
-		}
-
-		hdr := header.Deserialize(data)
-
-		// check xmax hasn't been updated
-		if hdr.Xmax() == 0 && hdr.Xmin() < tx.txid {
-			return ErrTxWriteConflict
-		}
-
-		// update old version xmax and store for writing when all headers have been verified
-		hdr.SetXmax(tx.txid)
-		headers[w.poffset] = hdr
-
-		// update new data header to point to previous version
-		var nhdr header.Header
-		nhdr.SetXmin(tx.txid)
-		nhdr.SetPrevious(w.poffset)
-
-		nhdata := header.Serialize(&nhdr)
-
-		err = tx.db.data.Write(nhdata, w.offset)
-		if err != nil {
-			return err
-		}
-	}
-
-	// write old version headers
-	for offset, hdr := range headers {
-		data := header.Serialize(hdr)
-
-		err := tx.db.data.Write(data, offset)
-		if err != nil {
-			return err
-		}
-	}
-
-	// update indexes to point to new nodes
-	for _, w := range tx.writes {
-		n, err := tx.db.index.Insert(w.key)
-		if err != nil {
-			return err
-		}
-
-		n.SetSize(w.size)
-		n.SetOffset(w.offset)
-
-		err = tx.db.index.WriteUnlock(n)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// Rollback : rolls back the transaction
-func (tx *Tx) Rollback() error {
-	// TODO : track and free data writen to data file & reserved space on index
-
-	for _, w := range tx.writes {
-		tx.db.data.Free.Release(w.size, w.offset)
-	}
-
-	return nil
-}
-
-func (tx *Tx) validateread(offset int64) error {
-	/*
-		pl.Lock(r.offset, true)
-		defer pl.Unlock(r.offset, true)
-	*/
-	return nil
-}
-
-func (tx *Tx) read(size, offset int64) ([]byte, error) {
-	pl := tx.db.data.PageLock()
-
-	pl.Lock(offset, true)
-	defer pl.Unlock(offset, true)
-
-	// TODO : ensure transaction is reading the correct version of data
-	data, err := tx.db.data.Read(size, offset)
-	if err != nil {
-		return nil, err
-	}
-
-	return data[header.HeaderSize:], nil
-}
-
-func (tx *Tx) write(key, value []byte) error {
 	// create header and merge with data
 	data := tx.createheader(value)
 	sz := int64(len(data))
@@ -238,6 +101,125 @@ func (tx *Tx) write(key, value []byte) error {
 	tx.addwrite(key, sz, off)
 
 	return nil
+}
+
+// Gets : get a value by string key
+func (tx *Tx) Gets(key string) ([]byte, error) {
+	return tx.Get([]byte(key))
+}
+
+// Sets : set a value by string key
+func (tx *Tx) Sets(key string, value []byte) error {
+	return tx.Set([]byte(key), value)
+}
+
+// TODO : find a better solution to commits use of index.Insert
+// this insert will keep unused index nodes around
+// in the event rollback is called. This is done to simplify
+// the checking logic and reduce the amount of locking of index
+// nodes and avoids having to re-read index data multiple times
+
+// Commit : commits the transaction
+func (tx *Tx) Commit() error {
+	pl := tx.db.data.PageLock()
+
+	// TODO: validate reads; before or after writes, remove duplicates where data was read and written?
+
+	for i := 0; i < len(tx.writes); i++ {
+		// insert index nodes and lookup previous data versions
+		n, err := tx.db.index.Insert(tx.writes[i].key)
+		if err != nil {
+			return err
+		}
+
+		// update new data header to point to old version
+		hdr := header.Header{}
+		hdr.SetXmin(tx.txid)
+		hdr.SetPrevious(n.Offset())
+
+		data := header.Serialize(&hdr)
+
+		err = tx.db.data.Write(data, tx.writes[i].offset)
+		if err != nil {
+			return err
+		}
+
+		tx.writes[i].node = n
+
+		// lock old data versions
+		pl.Lock(n.Offset(), false)
+		defer pl.Unlock(n.Offset(), false)
+	}
+
+	for i := 0; i < len(tx.writes); i++ {
+		w := tx.writes[i]
+
+		// skip checking newly inserted keys
+		if !w.node.Leaf() {
+			continue
+		}
+
+		// read old version data header
+		data, err := tx.db.data.Read(header.HeaderSize, w.node.Offset())
+		if err != nil {
+			return nil
+		}
+
+		w.header = header.Deserialize(data)
+
+		// check xmax hasn't been updated
+		if w.header.Xmax() == 0 && w.header.Xmin() < tx.txid {
+			return ErrTxWriteConflict
+		}
+	}
+
+	for i := 0; i < len(tx.writes); i++ {
+		w := tx.writes[i]
+
+		// update old version xmax
+		w.header.SetXmax(tx.txid)
+		data := header.Serialize(w.header)
+
+		err := tx.db.data.Write(data, w.node.Offset())
+		if err != nil {
+			return err
+		}
+
+		// finalize index insert/update
+		w.node.SetSize(w.size)
+		w.node.SetOffset(w.offset)
+
+		err = tx.db.index.WriteUnlock(w.node)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// Rollback : rolls back the transaction
+func (tx *Tx) Rollback() error {
+	for _, w := range tx.writes {
+		tx.db.data.Free.Release(w.size, w.offset)
+	}
+
+	return nil
+}
+
+func (tx *Tx) read(size, offset int64) ([]byte, error) {
+	pl := tx.db.data.PageLock()
+
+	pl.Lock(offset, true)
+	defer pl.Unlock(offset, true)
+
+	// TODO : ensure transaction is reading the correct version of data
+	data, err := tx.db.data.Read(size, offset)
+	if err != nil {
+		return nil, err
+	}
+
+	return data[header.HeaderSize:], nil
 }
 
 func (tx *Tx) createheader(value []byte) []byte {

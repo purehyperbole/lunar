@@ -73,6 +73,8 @@ func Deserialize(data []byte) *Header {
 // Prepend : prepends header information to data
 func Prepend(h *Header, data []byte) []byte {
 	hdr := Serialize(h)
+	// may be more performant to write the header seperately
+	// as this append creates a copy of the data
 	hdr = append(hdr, data...)
 	return hdr
 }

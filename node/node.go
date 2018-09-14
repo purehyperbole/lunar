@@ -74,7 +74,7 @@ func (n *Node) Children() bool {
 
 // Leaf : returns true if node has associated data
 func (n *Node) Leaf() bool {
-	return n.leaf == 1
+	return n.offset != 0 && n.size != 0
 }
 
 // Prefix : returns the node's prefix. returns nil if no prefix is defined
