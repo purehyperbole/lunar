@@ -13,10 +13,12 @@ func testBuildBytes() []byte {
 	var scratch []byte
 	xmin := uint64(2)
 	xmax := uint64(15)
-	previous := int64(8192)
+	psize := int64(8192)
+	poffset := int64(4096)
 	scratch = append(scratch, (*[8]byte)(unsafe.Pointer(&xmin))[:]...)
 	scratch = append(scratch, (*[8]byte)(unsafe.Pointer(&xmax))[:]...)
-	scratch = append(scratch, (*[8]byte)(unsafe.Pointer(&previous))[:]...)
+	scratch = append(scratch, (*[8]byte)(unsafe.Pointer(&psize))[:]...)
+	scratch = append(scratch, (*[8]byte)(unsafe.Pointer(&poffset))[:]...)
 
 	copy(data[0:], scratch[:])
 
@@ -25,9 +27,10 @@ func testBuildBytes() []byte {
 
 func TestSerialize(t *testing.T) {
 	hdr := Header{
-		xmin:     0,
-		xmax:     5,
-		previous: 4096,
+		xmin:    0,
+		xmax:    5,
+		psize:   4096,
+		poffset: 4096,
 	}
 
 	data := Serialize(&hdr)
@@ -43,7 +46,10 @@ func TestDeserialize(t *testing.T) {
 
 	hdr := Deserialize(data)
 
+	sz, off := hdr.Previous()
+
 	assert.Equal(t, uint64(2), hdr.Xmin())
 	assert.Equal(t, uint64(15), hdr.Xmax())
-	assert.Equal(t, int64(8192), hdr.Previous())
+	assert.Equal(t, int64(8192), sz)
+	assert.Equal(t, int64(4096), off)
 }

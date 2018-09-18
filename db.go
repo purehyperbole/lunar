@@ -10,6 +10,7 @@ import (
 
 // DB : Database
 type DB struct {
+	path  string
 	index *radix.Radix
 	data  *table.Table
 	tx    uint64
@@ -25,6 +26,7 @@ func Open(path string) (*DB, error) {
 	}
 
 	return &DB{
+		path:  path,
 		index: radix.New(idxt),
 		data:  dbt,
 	}, nil

@@ -3,6 +3,7 @@ package lunar
 import (
 	"bytes"
 	"errors"
+	"fmt"
 
 	"github.com/purehyperbole/lunar/header"
 	"github.com/purehyperbole/lunar/node"
@@ -135,7 +136,7 @@ func (tx *Tx) Commit() error {
 		// update new data header to point to old version
 		hdr := header.Header{}
 		hdr.SetXmin(tx.txid)
-		hdr.SetPrevious(n.Offset())
+		hdr.SetPrevious(n.Size(), n.Offset())
 
 		data := header.Serialize(&hdr)
 
@@ -168,7 +169,9 @@ func (tx *Tx) Commit() error {
 		w.header = header.Deserialize(data)
 
 		// check xmax hasn't been updated
-		if w.header.Xmax() == 0 && w.header.Xmin() < tx.txid {
+		if w.header.Xmax() != 0 || w.header.Xmin() > tx.txid {
+			fmt.Println("TX:", tx.txid)
+			header.Print(w.header)
 			return ErrTxWriteConflict
 		}
 	}
@@ -176,20 +179,22 @@ func (tx *Tx) Commit() error {
 	for i := 0; i < len(tx.writes); i++ {
 		w := tx.writes[i]
 
-		// update old version xmax
-		w.header.SetXmax(tx.txid)
-		data := header.Serialize(w.header)
+		if w.header != nil {
+			// update old version xmax
+			w.header.SetXmax(tx.txid)
+			data := header.Serialize(w.header)
 
-		err := tx.db.data.Write(data, w.node.Offset())
-		if err != nil {
-			return err
+			err := tx.db.data.Write(data, w.node.Offset())
+			if err != nil {
+				return err
+			}
 		}
 
 		// finalize index insert/update
 		w.node.SetSize(w.size)
 		w.node.SetOffset(w.offset)
 
-		err = tx.db.index.WriteUnlock(w.node)
+		err := tx.db.index.WriteUnlock(w.node)
 		if err != nil {
 			return err
 		}
@@ -210,16 +215,33 @@ func (tx *Tx) Rollback() error {
 func (tx *Tx) read(size, offset int64) ([]byte, error) {
 	pl := tx.db.data.PageLock()
 
-	pl.Lock(offset, true)
-	defer pl.Unlock(offset, true)
+	for {
+		pl.Lock(offset, true)
+
+		hdata, err := tx.db.data.Read(header.HeaderSize, offset)
+		if err != nil {
+			pl.Unlock(offset, true)
+			return nil, err
+		}
+
+		pl.Unlock(offset, true)
+
+		hdr := header.Deserialize(hdata)
+
+		if !hdr.HasPrevious() || hdr.Xmax() != 0 && hdr.Xmin() < tx.txid && hdr.Xmax() > tx.txid {
+			break
+		}
+
+		size, offset = hdr.Previous()
+	}
 
 	// TODO : ensure transaction is reading the correct version of data
-	data, err := tx.db.data.Read(size, offset)
+	data, err := tx.db.data.Read(size-header.HeaderSize, offset+header.HeaderSize)
 	if err != nil {
 		return nil, err
 	}
 
-	return data[header.HeaderSize:], nil
+	return data, nil
 }
 
 func (tx *Tx) createheader(value []byte) []byte {

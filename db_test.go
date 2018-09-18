@@ -9,8 +9,8 @@ import (
 
 func cleanup(db *DB) {
 	db.Close()
-	os.Remove("test.db")
-	os.Remove("test.db.idx")
+	os.Remove(db.path)
+	os.Remove(db.path + ".idx")
 }
 
 func TestDBOpen(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"sync"
 	"syscall"
 	"unsafe"
 )
@@ -31,6 +32,7 @@ type Table struct {
 	Free    *FreeList
 	plock   *PageLock
 	fd      *os.File
+	lock    sync.RWMutex
 	mapping []byte
 }
 
@@ -52,6 +54,9 @@ func New(path string) (*Table, error) {
 
 // Read : reads from table at a given offset
 func (t *Table) Read(size, offset int64) ([]byte, error) {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
 	if int64(len(t.mapping)) < (offset + size) {
 		return nil, ErrBoundsViolation
 	}
@@ -66,7 +71,7 @@ func (t *Table) Write(data []byte, offset int64) error {
 	}
 
 	if (int64(len(t.mapping)) - offset) < int64(len(data)) {
-		err := t.resize(int64(len(data)))
+		err := t.grow(int64(len(data)), offset)
 		if err != nil {
 			return err
 		}
@@ -143,6 +148,21 @@ func (t *Table) mremap() error {
 	_, _, err := syscall.Syscall(syscall.SYS_MREMAP, sh.Data, uintptr(sh.Len), 0)
 	if err != 0 {
 		return syscall.Errno(err)
+	}
+
+	return nil
+}
+
+func (t *Table) grow(size, offset int64) error {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	// this check is run again to avoid having to lock even when
+	// there is space available. However, this can cause multiple threads to
+	// request a resize at the same time. Running this conditional again
+	// should resolve this.
+	if (int64(len(t.mapping)) - offset) < size {
+		return t.resize(size)
 	}
 
 	return nil
