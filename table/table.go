@@ -117,14 +117,21 @@ func (t *Table) munmap() error {
 	return syscall.Munmap(t.mapping)
 }
 
-func (t *Table) mremap() error {
+func (t *Table) mremap(newSize int64) error {
 	sh := (*reflect.SliceHeader)(unsafe.Pointer(&t.mapping))
 
-	// doesn't work, returns invalid argument. incorrect flags/args?
-	_, _, err := syscall.Syscall(syscall.SYS_MREMAP, sh.Data, uintptr(sh.Len), 0)
+	r1, _, err := syscall.Syscall6(syscall.SYS_MREMAP, sh.Data, uintptr(sh.Len), uintptr(newSize), uintptr(1), 0, 0)
 	if err != 0 {
 		return syscall.Errno(err)
 	}
+
+	nsh := &reflect.SliceHeader{
+		Data: r1,
+		Len:  int(newSize),
+		Cap:  int(newSize),
+	}
+
+	t.mapping = *(*[]byte)(unsafe.Pointer(nsh))
 
 	return nil
 }
@@ -141,7 +148,9 @@ func (t *Table) sync() error {
 }
 
 func (t *Table) resize(size int64) error {
-	err := t.fd.Truncate(t.growadvise(size))
+	newSize := t.growadvise(size)
+
+	err := t.fd.Truncate(newSize)
 	if err != nil {
 		return err
 	}
@@ -151,12 +160,7 @@ func (t *Table) resize(size int64) error {
 		return err
 	}
 
-	err = t.munmap()
-	if err != nil {
-		return err
-	}
-
-	return t.mmap()
+	return t.mremap(newSize)
 }
 
 // Size : Returns size in bytes
@@ -170,16 +174,18 @@ func (t *Table) Size() int64 {
 }
 
 func (t *Table) growadvise(size int64) int64 {
-	if size < t.Size() {
-		size = t.Size() * 2
+	csz := t.Size()
+
+	if size < csz {
+		size = csz * 2
 	}
 
 	if size < MinStep {
-		return t.Size() + MinStep
+		return csz + MinStep
 	}
 
 	if size > MaxStep {
-		return t.Size() + MaxStep
+		return csz + MaxStep
 	}
 
 	return size + size%PageSize
