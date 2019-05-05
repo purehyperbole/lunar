@@ -1,39 +1,26 @@
 package lunar
 
 import (
-	"errors"
 	"os"
 
-	"github.com/purehyperbole/lunar/node"
 	"github.com/purehyperbole/lunar/table"
 )
 
-func setup(indexpath, datapath string) (*table.Table, *table.Table, error) {
-	idxpe := exists(indexpath)
-	datpe := exists(datapath)
-
-	if !idxpe && datpe || idxpe && !datpe {
-		return nil, nil, errors.New("missing index or database file")
-	}
-
-	idxt, err := table.New(indexpath)
-	if err != nil {
-		return nil, nil, err
-	}
-
+func setup(datapath string) (*table.Table, error) {
 	dbt, err := table.New(datapath)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	if idxpe {
-		return idxt, dbt, loadfreelists(idxt, dbt)
+	if exists(datapath) {
+		//return dbt, loadfreelists(dbt)
 	}
 
-	return idxt, dbt, nil
+	return dbt, nil
 }
 
-func loadfreelists(index, data *table.Table) error {
+/*
+func loadfreelists(data *table.Table) error {
 	nodes := index.Size() / node.NodeSize
 
 	for i := 0; i < int(nodes); i++ {
@@ -56,6 +43,7 @@ func loadfreelists(index, data *table.Table) error {
 
 	return nil
 }
+*/
 
 func exists(path string) bool {
 	_, err := os.Stat(path)
