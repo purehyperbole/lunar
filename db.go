@@ -3,6 +3,7 @@ package lunar
 import (
 	"errors"
 
+	"github.com/purehyperbole/lunar/header"
 	"github.com/purehyperbole/lunar/table"
 	"github.com/purehyperbole/rad"
 )
@@ -51,25 +52,39 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 		return nil, ErrNotFound
 	}
 
-	return db.data.Read(entry.size, entry.offset)
+	data, err := db.data.Read(entry.size, entry.offset)
+	if err != nil {
+		return nil, err
+	}
+
+	h := header.Deserialize(data[:header.HeaderSize])
+
+	return data[h.DataOffset():], nil
 }
 
 // Set : set value by key
 func (db *DB) Set(key, value []byte) error {
-	sz := int64(len(value))
+	var h header.Header
+	h.SetKeySize(int64(len(key)))
+	h.SetDataSize(int64(len(value)))
 
-	off, err := db.data.Free.Reserve(sz)
+	off, err := db.data.Free.Reserve(h.TotalSize())
 	if err != nil {
 		return err
 	}
 
-	err = db.data.Write(value, off)
+	data := make([]byte, h.TotalSize())
+	copy(data[0:], header.Serialize(&h))
+	copy(data[header.HeaderSize:], key)
+	copy(data[h.DataOffset():], key)
+
+	err = db.data.Write(data, off)
 	if err != nil {
 		return err
 	}
 
 	db.index.MustInsert(key, &entry{
-		size:   sz,
+		size:   h.TotalSize(),
 		offset: off,
 	})
 

@@ -8,7 +8,7 @@ import (
 
 const (
 	// HeaderSize the allocated size of the header
-	HeaderSize = 1 << 6
+	HeaderSize = 48
 )
 
 // Header data header stores
@@ -19,6 +19,7 @@ type Header struct {
 	psize   int64  // size of the previous version of this data, including header
 	poffset int64  // offset of the previous version of this data
 	size    int64  // size of current data
+	ksize   int64  // size of the current key
 }
 
 // Xmin returns the transaction if of the node that created the data
@@ -31,9 +32,24 @@ func (h *Header) Xmax() uint64 {
 	return h.xmax
 }
 
-// DataSize
+// DataSize returns the size of the values data
 func (h *Header) DataSize() int64 {
 	return h.size
+}
+
+// KeySize returns the size of the tuples key
+func (h *Header) KeySize() int64 {
+	return h.ksize
+}
+
+// TotalSize returns the total size of header + data
+func (h *Header) TotalSize() int64 {
+	return HeaderSize + h.ksize + h.size
+}
+
+// DataOffset returs the offset that the data starts at
+func (h *Header) DataOffset() int64 {
+	return HeaderSize + h.ksize
 }
 
 // Previous returns the size and offset of the previous version's data
@@ -62,9 +78,19 @@ func (h *Header) SetPrevious(size, offset int64) {
 	h.poffset = offset
 }
 
+// SetDataSize sets the size of the keys data
+func (h *Header) SetDataSize(size int64) {
+	h.size = size
+}
+
+// SetKeySize sets the size of the tuples key
+func (h *Header) SetKeySize(size int64) {
+	h.ksize = size
+}
+
 // Serialize serialize a node to a byteslice
 func Serialize(h *Header) []byte {
-	data := make([]byte, 40)
+	data := make([]byte, 48)
 
 	xmin := *(*[8]byte)(unsafe.Pointer(&h.xmin))
 	copy(data[0:], xmin[:])
@@ -81,6 +107,9 @@ func Serialize(h *Header) []byte {
 	size := *(*[8]byte)(unsafe.Pointer(&h.size))
 	copy(data[32:], size[:])
 
+	ksize := *(*[8]byte)(unsafe.Pointer(&h.ksize))
+	copy(data[40:], ksize[:])
+
 	return data
 }
 
@@ -91,6 +120,8 @@ func Deserialize(data []byte) *Header {
 		xmax:    *(*uint64)(unsafe.Pointer(&data[8])),
 		psize:   *(*int64)(unsafe.Pointer(&data[16])),
 		poffset: *(*int64)(unsafe.Pointer(&data[24])),
+		size:    *(*int64)(unsafe.Pointer(&data[32])),
+		ksize:   *(*int64)(unsafe.Pointer(&data[40])),
 	}
 }
 

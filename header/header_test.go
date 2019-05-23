@@ -8,7 +8,7 @@ import (
 )
 
 func testBuildBytes() []byte {
-	data := make([]byte, 32)
+	data := make([]byte, 48)
 
 	var scratch []byte
 	xmin := uint64(2)
@@ -16,11 +16,13 @@ func testBuildBytes() []byte {
 	psize := int64(8192)
 	poffset := int64(4096)
 	size := int64(2048)
+	ksize := int64(8)
 	scratch = append(scratch, (*[8]byte)(unsafe.Pointer(&xmin))[:]...)
 	scratch = append(scratch, (*[8]byte)(unsafe.Pointer(&xmax))[:]...)
 	scratch = append(scratch, (*[8]byte)(unsafe.Pointer(&psize))[:]...)
 	scratch = append(scratch, (*[8]byte)(unsafe.Pointer(&poffset))[:]...)
 	scratch = append(scratch, (*[8]byte)(unsafe.Pointer(&size))[:]...)
+	scratch = append(scratch, (*[8]byte)(unsafe.Pointer(&ksize))[:]...)
 
 	copy(data[0:], scratch[:])
 
@@ -34,16 +36,18 @@ func TestSerialize(t *testing.T) {
 		psize:   4096,
 		poffset: 4096,
 		size:    2048,
+		ksize:   8,
 	}
 
 	data := Serialize(&hdr)
 
-	assert.Len(t, data, 40)
+	assert.Len(t, data, 48)
 	assert.Equal(t, uint64(0), *(*uint64)(unsafe.Pointer(&data[0])))
 	assert.Equal(t, uint64(5), *(*uint64)(unsafe.Pointer(&data[8])))
 	assert.Equal(t, int64(4096), *(*int64)(unsafe.Pointer(&data[16])))
 	assert.Equal(t, int64(4096), *(*int64)(unsafe.Pointer(&data[24])))
 	assert.Equal(t, int64(2048), *(*int64)(unsafe.Pointer(&data[32])))
+	assert.Equal(t, int64(8), *(*int64)(unsafe.Pointer(&data[40])))
 }
 
 func TestDeserialize(t *testing.T) {
