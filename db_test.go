@@ -80,6 +80,7 @@ func TestDBGet(t *testing.T) {
 	data, err = db.Gets("test-key")
 
 	assert.Nil(t, err)
+
 	assert.Equal(t, []byte("test-1234"), data)
 
 	// test persistence

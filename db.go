@@ -25,13 +25,13 @@ var (
 
 // Open : open a database table and index, will create both if they dont exist
 func Open(path string) (*DB, error) {
-	dbt, err := setup(path)
+	radix, dbt, err := setup(path)
 	if err != nil {
 		return nil, err
 	}
 
 	return &DB{
-		index: rad.New(),
+		index: radix,
 		data:  dbt,
 	}, nil
 }
@@ -76,7 +76,7 @@ func (db *DB) Set(key, value []byte) error {
 	data := make([]byte, h.TotalSize())
 	copy(data[0:], header.Serialize(&h))
 	copy(data[header.HeaderSize:], key)
-	copy(data[h.DataOffset():], key)
+	copy(data[h.DataOffset():], value)
 
 	err = db.data.Write(data, off)
 	if err != nil {
