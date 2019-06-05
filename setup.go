@@ -18,7 +18,6 @@ func setup(datapath string) (*rad.Radix, *table.Table, error) {
 
 	if exists(datapath) {
 		return r, dbt, reload(r, dbt)
-		//return dbt, loadfreelists(dbt)
 	}
 
 	return r, dbt, nil
@@ -26,6 +25,13 @@ func setup(datapath string) (*rad.Radix, *table.Table, error) {
 
 func reload(r *rad.Radix, t *table.Table) error {
 	var pos int64
+	var err error
+
+	defer func() {
+		if err == nil {
+			_, err = t.Free.Reserve(pos)
+		}
+	}()
 
 	for {
 		if pos+header.HeaderSize > t.Size() {
@@ -43,10 +49,14 @@ func reload(r *rad.Radix, t *table.Table) error {
 			return nil
 		}
 
-		key, err := t.Read(h.KeySize(), pos+header.HeaderSize)
+		key := make([]byte, h.KeySize())
+
+		kd, err := t.Read(h.KeySize(), pos+header.HeaderSize)
 		if err != nil {
-			return nil
+			return err
 		}
+
+		copy(key, kd)
 
 		r.Insert(key, &entry{
 			size:   h.TotalSize(),
@@ -55,34 +65,9 @@ func reload(r *rad.Radix, t *table.Table) error {
 
 		pos = pos + h.TotalSize()
 	}
-	return nil
+
+	return err
 }
-
-/*
-func loadfreelists(data *table.Table) error {
-	nodes := index.Size() / node.NodeSize
-
-	for i := 0; i < int(nodes); i++ {
-		offset := int64(i) * node.NodeSize
-		ndata, err := index.Read(node.NodeSize, offset)
-
-		if err != nil {
-			return err
-		}
-
-		n := node.Deserialize(ndata)
-
-		if !n.Empty() {
-			index.Free.Allocate(node.NodeSize, offset)
-			if n.Size() > 0 {
-				data.Free.Allocate(n.Size(), n.Offset())
-			}
-		}
-	}
-
-	return nil
-}
-*/
 
 func exists(path string) bool {
 	_, err := os.Stat(path)

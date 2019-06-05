@@ -8,7 +8,7 @@ import (
 	"github.com/purehyperbole/rad"
 )
 
-// DB : Database
+// DB Database
 type DB struct {
 	index *rad.Radix
 	data  *table.Table
@@ -23,7 +23,7 @@ var (
 	ErrNotFound = errors.New("key not found")
 )
 
-// Open : open a database table and index, will create both if they dont exist
+// Open open a database table and index, will create both if they dont exist
 func Open(path string) (*DB, error) {
 	radix, dbt, err := setup(path)
 	if err != nil {
@@ -36,13 +36,13 @@ func Open(path string) (*DB, error) {
 	}, nil
 }
 
-// Close : unmaps and closes data and index files
-// TODO : implement msync to ensure that data is flushed before closing!
+// Close unmaps and closes data and index files
+// TODO implement msync to ensure that data is flushed before closing!
 func (db *DB) Close() error {
 	return db.data.Close()
 }
 
-// Get : get a value by key
+// Get get a value by key
 func (db *DB) Get(key []byte) ([]byte, error) {
 	v := db.index.Lookup(key)
 
@@ -62,7 +62,7 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 	return data[h.DataOffset():], nil
 }
 
-// Set : set value by key
+// Set set value by key
 func (db *DB) Set(key, value []byte) error {
 	var h header.Header
 	h.SetKeySize(int64(len(key)))
@@ -91,12 +91,12 @@ func (db *DB) Set(key, value []byte) error {
 	return nil
 }
 
-// Gets : get a value by string key
+// Gets get a value by string key
 func (db *DB) Gets(key string) ([]byte, error) {
 	return db.Get([]byte(key))
 }
 
-// Sets : set a value by string key
+// Sets set a value by string key
 func (db *DB) Sets(key string, value []byte) error {
 	return db.Set([]byte(key), value)
 }
