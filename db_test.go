@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func cleanup(db *DB) {
@@ -22,13 +23,9 @@ func TestDBOpen(t *testing.T) {
 	assert.NotNil(t, db)
 
 	dstat, derr := os.Stat("test.db")
-	istat, ierr := os.Stat("test.db.idx")
 
 	assert.Nil(t, derr)
-	assert.Nil(t, ierr)
 	assert.Equal(t, int64(1<<16), dstat.Size())
-	assert.Equal(t, int64(1<<16), istat.Size())
-
 	assert.Nil(t, db.Close())
 
 	// open existing
@@ -72,32 +69,33 @@ func TestDBGet(t *testing.T) {
 
 	// get a nonexistant key
 	data, err := db.Gets("test-key")
-
-	assert.NotNil(t, err)
+	require.NotNil(t, err)
 	assert.Nil(t, data)
 
 	// get an existing key
 	err = db.Sets("test-key", []byte("test-1234"))
-
-	assert.Nil(t, err)
+	require.Nil(t, err)
 
 	data, err = db.Gets("test-key")
-
-	assert.Nil(t, err)
+	require.Nil(t, err)
 	assert.Equal(t, []byte("test-1234"), data)
 
 	// test persistence
 	err = db.Close()
-
-	assert.Nil(t, err)
+	require.Nil(t, err)
 
 	db, err = Open("test.db")
 	defer cleanup(db)
+	require.Nil(t, err)
 
-	assert.Nil(t, err)
+	err = db.Sets("test-4567", []byte("test-4567"))
+	require.Nil(t, err)
+
+	data, err = db.Gets("test-4567")
+	require.Nil(t, err)
+	assert.Equal(t, []byte("test-4567"), data)
 
 	data, err = db.Gets("test-key")
-
-	assert.Nil(t, err)
+	require.Nil(t, err)
 	assert.Equal(t, []byte("test-1234"), data)
 }

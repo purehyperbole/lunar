@@ -1,98 +1,102 @@
 package lunar
 
 import (
-	"github.com/purehyperbole/lunar/node"
-	"github.com/purehyperbole/lunar/radix"
+	"errors"
+
+	"github.com/purehyperbole/lunar/header"
 	"github.com/purehyperbole/lunar/table"
+	"github.com/purehyperbole/rad"
 )
 
-// DB : Database
+// DB Database
 type DB struct {
-	index *radix.Radix
+	index *rad.Radix
 	data  *table.Table
 }
 
-// Open : open a database table and index, will create both if they dont exist
-func Open(path string) (*DB, error) {
-	idxpath := path + ".idx"
+type entry struct {
+	offset int64
+	size   int64
+}
 
-	idxt, dbt, err := setup(idxpath, path)
+var (
+	ErrNotFound = errors.New("key not found")
+)
+
+// Open open a database table and index, will create both if they dont exist
+func Open(path string) (*DB, error) {
+	radix, dbt, err := setup(path)
 	if err != nil {
 		return nil, err
 	}
 
 	return &DB{
-		index: radix.New(idxt),
+		index: radix,
 		data:  dbt,
 	}, nil
 }
 
-// Close : unmaps and closes data and index files
-// TODO : implement msync to ensure that data is flushed before closing!
+// Close unmaps and closes data and index files
+// TODO implement msync to ensure that data is flushed before closing!
 func (db *DB) Close() error {
-	err := db.index.Close()
-	if err != nil {
-		return err
-	}
-
 	return db.data.Close()
 }
 
-// Get : get a value by key
+// Get get a value by key
 func (db *DB) Get(key []byte) ([]byte, error) {
-	n, err := db.index.Lookup(key)
+	v := db.index.Lookup(key)
+
+	entry, ok := v.(*entry)
+
+	if v == nil || !ok {
+		return nil, ErrNotFound
+	}
+
+	data, err := db.data.Read(entry.size, entry.offset)
 	if err != nil {
 		return nil, err
 	}
 
-	if n.Size() == 0 && n.Offset() == 0 {
-		return nil, radix.ErrNotFound
-	}
+	h := header.Deserialize(data[:header.HeaderSize])
 
-	return db.data.Read(n.Size(), n.Offset())
+	return data[h.DataOffset():], nil
 }
 
-// Set : set value by key
+// Set set value by key
 func (db *DB) Set(key, value []byte) error {
-	k := []byte(key)
+	var h header.Header
+	h.SetKeySize(int64(len(key)))
+	h.SetDataSize(int64(len(value)))
 
-	n, err := db.index.Insert(k)
-	if err != nil && err != radix.ErrNotFound {
-		return err
-	}
-
-	return db.update(n, k, value)
-}
-
-// Gets : get a value by string key
-func (db *DB) Gets(key string) ([]byte, error) {
-	return db.Get([]byte(key))
-}
-
-// Sets : set a value by string key
-func (db *DB) Sets(key string, value []byte) error {
-	return db.Set([]byte(key), value)
-}
-
-func (db *DB) update(n *node.Node, key, value []byte) error {
-	sz := int64(len(value))
-
-	if n.Size() != sz {
-		db.data.Free.Release(n.Size(), n.Offset())
-
-		off, err := db.data.Free.Reserve(sz)
-		if err != nil {
-			return err
-		}
-
-		n.SetOffset(off)
-		n.SetSize(sz)
-	}
-
-	err := db.data.Write(value, n.Offset())
+	off, err := db.data.Free.Reserve(h.TotalSize())
 	if err != nil {
 		return err
 	}
 
-	return db.index.Modify(n, n.NodeOffset)
+	data := make([]byte, h.TotalSize())
+	copy(data[0:], header.Serialize(&h))
+	copy(data[header.HeaderSize:], key)
+	copy(data[h.DataOffset():], value)
+
+	err = db.data.Write(data, off)
+	if err != nil {
+		return err
+	}
+
+	db.index.MustInsert(key, &entry{
+		size:   h.TotalSize(),
+		offset: off,
+	})
+
+	return nil
+}
+
+// Gets get a value by string key
+func (db *DB) Gets(key string) ([]byte, error) {
+	return db.Get([]byte(key))
+}
+
+// Sets set a value by string key
+func (db *DB) Sets(key string, value []byte) error {
+	return db.Set([]byte(key), value)
 }

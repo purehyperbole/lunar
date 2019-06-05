@@ -5,7 +5,7 @@ import (
 )
 
 var (
-	// ErrNoFreeSpace : returned when there is not enough space free that meets the criteria
+	// ErrNoFreeSpace returned when there is not enough space free that meets the criteria
 	ErrNoFreeSpace = errors.New("there is not enough free space to allocate")
 )
 
@@ -15,13 +15,13 @@ type alloc struct {
 	next   *alloc
 }
 
-// FreeList : linked list implementation to track free space
+// FreeList linked list implementation to track free space
 type FreeList struct {
 	maxsize int64
 	root    *alloc
 }
 
-// NewFreeList : creates a new freelist
+// NewFreeList creates a new freelist
 func NewFreeList(maxsize int64) *FreeList {
 	return &FreeList{
 		maxsize: maxsize,
@@ -33,7 +33,7 @@ func NewFreeList(maxsize int64) *FreeList {
 	}
 }
 
-// Reserve : reserves free space and returns an index that matches the given size criteria
+// Reserve reserves free space and returns an index that matches the given size criteria
 func (f *FreeList) Reserve(size int64) (int64, error) {
 	current := f.root
 
@@ -52,7 +52,7 @@ func (f *FreeList) Reserve(size int64) (int64, error) {
 	return -1, ErrNoFreeSpace
 }
 
-// Allocate : allocates a specified region as reserved
+// Allocate allocates a specified region as reserved
 func (f *FreeList) Allocate(size, offset int64) error {
 	current := f.root
 
@@ -82,7 +82,7 @@ func (f *FreeList) Allocate(size, offset int64) error {
 	return nil
 }
 
-// Release : releases reserved space so it can be reused
+// Release releases reserved space so it can be reused
 func (f *FreeList) Release(size, offset int64) {
 	current := f.root
 
@@ -112,7 +112,7 @@ func (f *FreeList) Release(size, offset int64) {
 	(*current) = a
 }
 
-// Stats : returns the allocated space, and number of allocations
+// Stats returns the allocated space, and number of allocations
 func (f *FreeList) Stats() (int64, int64) {
 	var free int64
 	var nodes int64
@@ -129,7 +129,7 @@ func (f *FreeList) Stats() (int64, int64) {
 	return allocspace, nodes
 }
 
-// Empty : returns true if no space has been allocated
+// Empty returns true if no space has been allocated
 func (f *FreeList) Empty() bool {
 	return f.root.offset == 0 && f.root.next == nil
 }

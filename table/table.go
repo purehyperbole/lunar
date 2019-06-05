@@ -9,31 +9,31 @@ import (
 )
 
 const (
-	// PageSize : page size
+	// PageSize page size
 	PageSize = 1 << 12 // 4kb
-	// MinStep : the smallest increment that the table can grow
+	// MinStep the smallest increment that the table can grow
 	MinStep = 1 << 16 // 64 kb
-	// MaxStep : the largest increment that the table can grow
+	// MaxStep the largest increment that the table can grow
 	MaxStep = 1 << 30 // 1 GB
-	// MaxTableSize : maximum size of table
+	// MaxTableSize maximum size of table
 	MaxTableSize = 0x7FFFFFFFFFFFFFFF
 )
 
 var (
-	// ErrBoundsViolation : the specified segment of memory does not exist
+	// ErrBoundsViolation the specified segment of memory does not exist
 	ErrBoundsViolation = errors.New("specified offset and size exceeds size of mapping")
-	// ErrDataSizeTooLarge : the provided value data exceeds the maximum size limit
+	// ErrDataSizeTooLarge the provided value data exceeds the maximum size limit
 	ErrDataSizeTooLarge = errors.New("data exceeds maximum limit")
 )
 
-// Table : mmaped file
+// Table mmaped file
 type Table struct {
 	Free    *FreeList
 	fd      *os.File
 	mapping []byte
 }
 
-// New : loads a new table
+// New loads a new table
 func New(path string) (*Table, error) {
 	t := Table{
 		Free:    NewFreeList(MaxTableSize),
@@ -48,7 +48,7 @@ func New(path string) (*Table, error) {
 	return &t, t.mmap()
 }
 
-// Read : reads from table at a given offset
+// Read reads from table at a given offset
 func (t *Table) Read(size, offset int64) ([]byte, error) {
 	if int64(len(t.mapping)) < (offset + size) {
 		return nil, ErrBoundsViolation
@@ -57,7 +57,7 @@ func (t *Table) Read(size, offset int64) ([]byte, error) {
 	return t.mapping[offset:(offset + size)], nil
 }
 
-// Write : writes to table at a given offset
+// Write writes to table at a given offset
 func (t *Table) Write(data []byte, offset int64) error {
 	if len(data) > MaxStep {
 		return ErrDataSizeTooLarge
@@ -75,7 +75,7 @@ func (t *Table) Write(data []byte, offset int64) error {
 	return nil
 }
 
-// Close : close table file descriptor and unmap
+// Close close table file descriptor and unmap
 func (t *Table) Close() error {
 	err := t.sync()
 	if err != nil {
@@ -163,7 +163,7 @@ func (t *Table) resize(size int64) error {
 	return t.mremap(newSize)
 }
 
-// Size : Returns size in bytes
+// Size Returns size in bytes
 func (t *Table) Size() int64 {
 	stat, err := t.fd.Stat()
 	if err != nil {
