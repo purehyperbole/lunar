@@ -10,8 +10,9 @@ import (
 
 // DB Database
 type DB struct {
-	index *rad.Radix
-	data  *table.Table
+	index      *rad.Radix
+	data       *table.Table
+	compaction bool // compaction on file open
 }
 
 type entry struct {
@@ -24,16 +25,17 @@ var (
 )
 
 // Open open a database table and index, will create both if they dont exist
-func Open(path string) (*DB, error) {
-	radix, dbt, err := setup(path)
-	if err != nil {
-		return nil, err
+func Open(path string, opts ...func(*DB) error) (*DB, error) {
+	var db DB
+
+	for _, opt := range opts {
+		err := opt(&db)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	return &DB{
-		index: radix,
-		data:  dbt,
-	}, nil
+	return &db, db.setup(path)
 }
 
 // Close unmaps and closes data and index files
