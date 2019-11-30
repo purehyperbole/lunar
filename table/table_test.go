@@ -67,7 +67,7 @@ func TestConcurrentWrite(t *testing.T) {
 	db, err := New("test.db")
 	require.Nil(t, err)
 
-	// defer os.Remove(db.fd.Name())
+	defer os.Remove(db.fd.Name())
 
 	values := [][]byte{
 		[]byte("one"),
@@ -84,9 +84,12 @@ func TestConcurrentWrite(t *testing.T) {
 
 	for i := 0; i < 8; i++ {
 		go func(w int) {
-			for x := 0; x < 10000; x++ {
+			for x := 0; x < 100000; x++ {
 				_, err := db.Write(values[w])
-				require.Nil(t, err)
+
+				if err != nil {
+					panic(err)
+				}
 			}
 			wg.Done()
 		}(i)

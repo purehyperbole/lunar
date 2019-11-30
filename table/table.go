@@ -29,7 +29,6 @@ var (
 // Table mmaped file
 type Table struct {
 	fd       *os.File
-	size     int64
 	position int64
 	mapping  unsafe.Pointer
 	mu       sync.Mutex
@@ -47,21 +46,24 @@ func New(path string) (*Table, error) {
 		return nil, err
 	}
 
-	t := Table{
-		fd:   fd,
-		size: stat.Size(),
-	}
-
-	if t.size > 1 {
-		mapping, err := newmmap(fd)
+	if stat.Size() < 1 {
+		err = fd.Truncate(MinStep)
 		if err != nil {
 			return nil, err
 		}
-
-		t.mapping = unsafe.Pointer(mapping)
 	}
 
-	return &t, t.resize(MinStep, 0)
+	mapping, err := newmmap(fd)
+	if err != nil {
+		return nil, err
+	}
+
+	t := Table{
+		fd:      fd,
+		mapping: unsafe.Pointer(mapping),
+	}
+
+	return &t, nil
 }
 
 // Read reads from table at a given offset
@@ -74,7 +76,7 @@ func (t *Table) Read(size, offset int64) ([]byte, error) {
 func (t *Table) Write(data []byte) (int64, error) {
 	ds := int64(len(data))
 
-	currentSize := atomic.LoadInt64(&t.size)
+	currentSize := t.size()
 	offset := atomic.AddInt64(&t.position, ds) - ds
 
 	if currentSize < offset+ds {
@@ -115,17 +117,21 @@ func (t *Table) sync() error {
 	return t.fd.Sync()
 }
 
+func (t *Table) size() int64 {
+	return (*mmap)(atomic.LoadPointer(&t.mapping)).size
+}
+
 func (t *Table) resize(size, offset int64) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if t.size > size+offset {
+	if t.size() > size+offset {
 		return nil
 	}
 
-	atomic.StoreInt64(&t.size, t.growadvise(size))
+	newSize := t.growadvise(size)
 
-	err := t.fd.Truncate(t.size)
+	err := t.fd.Truncate(newSize)
 	if err != nil {
 		return err
 	}
@@ -147,16 +153,18 @@ func (t *Table) resize(size, offset int64) error {
 }
 
 func (t *Table) growadvise(size int64) int64 {
-	if size < t.size {
-		size = t.size * 2
+	tsz := t.size()
+
+	if size < tsz {
+		size = tsz * 2
 	}
 
 	if size < MinStep {
-		return t.size + MinStep
+		return tsz + MinStep
 	}
 
 	if size > MaxStep {
-		return t.size + MaxStep
+		return tsz + MaxStep
 	}
 
 	return size + size%PageSize
