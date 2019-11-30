@@ -3,8 +3,8 @@ package table
 import (
 	"errors"
 	"os"
-	"reflect"
-	"syscall"
+	"sync"
+	"sync/atomic"
 	"unsafe"
 )
 
@@ -28,61 +28,82 @@ var (
 
 // Table mmaped file
 type Table struct {
-	Free    *FreeList
-	fd      *os.File
-	mapping []byte
+	fd       *os.File
+	size     int64
+	position int64
+	mapping  unsafe.Pointer
+	mu       sync.Mutex
 }
 
 // New loads a new table
 func New(path string) (*Table, error) {
-	t := Table{
-		Free:    NewFreeList(MaxTableSize),
-		mapping: make([]byte, 0),
-	}
-
-	err := t.open(path)
+	fd, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0766)
 	if err != nil {
 		return nil, err
 	}
 
-	return &t, t.mmap()
+	stat, err := fd.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	t := Table{
+		fd:   fd,
+		size: stat.Size(),
+	}
+
+	if t.size > 1 {
+		mapping, err := newmmap(fd)
+		if err != nil {
+			return nil, err
+		}
+
+		t.mapping = unsafe.Pointer(mapping)
+	}
+
+	return &t, t.resize(MinStep, 0)
 }
 
 // Read reads from table at a given offset
 func (t *Table) Read(size, offset int64) ([]byte, error) {
-	if int64(len(t.mapping)) < (offset + size) {
-		return nil, ErrBoundsViolation
-	}
-
-	return t.mapping[offset:(offset + size)], nil
+	mapping := (*mmap)(atomic.LoadPointer(&t.mapping))
+	return mapping.read(size, offset)
 }
 
 // Write writes to table at a given offset
-func (t *Table) Write(data []byte, offset int64) error {
-	if len(data) > MaxStep {
-		return ErrDataSizeTooLarge
-	}
+func (t *Table) Write(data []byte) (int64, error) {
+	ds := int64(len(data))
 
-	if (int64(len(t.mapping)) - offset) < int64(len(data)) {
-		err := t.resize(int64(len(data)))
+	currentSize := atomic.LoadInt64(&t.size)
+	offset := atomic.AddInt64(&t.position, ds) - ds
+
+	if currentSize < offset+ds {
+		err := t.resize(ds, offset)
 		if err != nil {
-			return err
+			return 0, err
 		}
 	}
 
-	copy(t.mapping[offset:], data)
+	mapping := (*mmap)(atomic.LoadPointer(&t.mapping))
 
-	return nil
+	err := mapping.write(data, offset)
+	if err != nil {
+		return 0, err
+	}
+
+	return offset, nil
 }
 
 // Close close table file descriptor and unmap
 func (t *Table) Close() error {
-	err := t.sync()
+	mapping := (*mmap)(atomic.LoadPointer(&t.mapping))
+
+	err := mapping.close()
 	if err != nil {
 		return err
 	}
 
-	err = t.munmap()
+	err = t.sync()
 	if err != nil {
 		return err
 	}
@@ -90,102 +111,52 @@ func (t *Table) Close() error {
 	return t.fd.Close()
 }
 
-func (t *Table) open(path string) error {
-	var err error
-
-	t.fd, err = os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0766)
-
-	return err
-}
-
-func (t *Table) mmap() error {
-	var err error
-
-	size := t.Size()
-
-	if size < PageSize {
-		t.resize(size)
-		size = t.Size()
-	}
-
-	t.mapping, err = syscall.Mmap(int(t.fd.Fd()), 0, int(size), syscall.PROT_WRITE|syscall.PROT_READ, syscall.MAP_SHARED)
-
-	return err
-}
-
-func (t *Table) munmap() error {
-	return syscall.Munmap(t.mapping)
-}
-
-func (t *Table) mremap(newSize int64) error {
-	sh := (*reflect.SliceHeader)(unsafe.Pointer(&t.mapping))
-
-	r1, _, err := syscall.Syscall6(syscall.SYS_MREMAP, sh.Data, uintptr(sh.Len), uintptr(newSize), uintptr(1), 0, 0)
-	if err != 0 {
-		return syscall.Errno(err)
-	}
-
-	nsh := &reflect.SliceHeader{
-		Data: r1,
-		Len:  int(newSize),
-		Cap:  int(newSize),
-	}
-
-	t.mapping = *(*[]byte)(unsafe.Pointer(nsh))
-
-	return nil
-}
-
 func (t *Table) sync() error {
-	sh := (*reflect.SliceHeader)(unsafe.Pointer(&t.mapping))
+	return t.fd.Sync()
+}
 
-	_, _, err := syscall.Syscall(syscall.SYS_MSYNC, sh.Data, uintptr(sh.Len), syscall.MS_SYNC)
-	if err != 0 {
-		return syscall.Errno(err)
+func (t *Table) resize(size, offset int64) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.size > size+offset {
+		return nil
+	}
+
+	atomic.StoreInt64(&t.size, t.growadvise(size))
+
+	err := t.fd.Truncate(t.size)
+	if err != nil {
+		return err
+	}
+
+	oldMapping := (*mmap)(t.mapping)
+
+	newMapping, err := newmmap(t.fd)
+	if err != nil {
+		return err
+	}
+
+	atomic.StorePointer(&t.mapping, unsafe.Pointer(newMapping))
+
+	if oldMapping != nil {
+		return oldMapping.close()
 	}
 
 	return nil
-}
-
-func (t *Table) resize(size int64) error {
-	newSize := t.growadvise(size)
-
-	err := t.fd.Truncate(newSize)
-	if err != nil {
-		return err
-	}
-
-	err = t.fd.Sync()
-	if err != nil {
-		return err
-	}
-
-	return t.mremap(newSize)
-}
-
-// Size Returns size in bytes
-func (t *Table) Size() int64 {
-	stat, err := t.fd.Stat()
-	if err != nil {
-		return int64(0)
-	}
-
-	return stat.Size()
 }
 
 func (t *Table) growadvise(size int64) int64 {
-	csz := t.Size()
-
-	if size < csz {
-		size = csz * 2
+	if size < t.size {
+		size = t.size * 2
 	}
 
 	if size < MinStep {
-		return csz + MinStep
+		return t.size + MinStep
 	}
 
 	if size > MaxStep {
-		return csz + MaxStep
+		return t.size + MaxStep
 	}
 
 	return size + size%PageSize
