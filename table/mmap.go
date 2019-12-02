@@ -19,7 +19,7 @@ type mmap struct {
 	fd      *os.File // file descriptor
 	size    int64    // file Size
 	active  int32    // active read or write operations
-	closed  int32    // mapping is closed
+	closed  int32    // mapping is closed. probably should just use a rwmutex with write lock protecting the resize, but that would be no fun
 	mapping []byte   // mmap mapping
 }
 
