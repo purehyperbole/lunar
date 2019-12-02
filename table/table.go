@@ -86,14 +86,12 @@ func (t *Table) Write(data []byte) (int64, error) {
 		}
 	}
 
-	mapping := (*mmap)(atomic.LoadPointer(&t.mapping))
-
-	err := mapping.write(data, offset)
-	if err != nil {
-		return 0, err
+	err := (*mmap)(atomic.LoadPointer(&t.mapping)).write(data, offset)
+	for err == ErrMappingClosed {
+		err = (*mmap)(atomic.LoadPointer(&t.mapping)).write(data, offset)
 	}
 
-	return offset, nil
+	return offset, err
 }
 
 // Close close table file descriptor and unmap
@@ -146,7 +144,7 @@ func (t *Table) resize(size, offset int64) error {
 	atomic.StorePointer(&t.mapping, unsafe.Pointer(newMapping))
 
 	if oldMapping != nil {
-		return oldMapping.close()
+		go oldMapping.close()
 	}
 
 	return nil

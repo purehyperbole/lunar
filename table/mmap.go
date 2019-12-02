@@ -1,6 +1,8 @@
 package table
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"sync/atomic"
@@ -8,11 +10,14 @@ import (
 	"unsafe"
 )
 
+var (
+	ErrMappingClosed = errors.New("mapping closed")
+)
+
 type mmap struct {
 	fd      *os.File // file descriptor
 	size    int64    // file Size
-	active  int64    // active read or write operations
-	closed  int64    // the mapping has been closed
+	active  int32    // active read or write operations
 	mapping []byte   // mmap mapping
 }
 
@@ -49,6 +54,7 @@ func (m *mmap) mmap() error {
 }
 
 func (m *mmap) munmap() error {
+	fmt.Println("munmap", m.size)
 	return syscall.Munmap(m.mapping)
 }
 
@@ -72,14 +78,11 @@ func (m *mmap) mremap(newSize int64) error {
 }
 
 func (m *mmap) read(size, offset int64) ([]byte, error) {
-	atomic.AddInt64(&m.active, 1)
+	if atomic.AddInt32(&m.active, 1) < 1 {
+		return nil, ErrMappingClosed
+	}
 
-	defer func() {
-		a := atomic.AddInt64(&m.active, -1)
-		if atomic.LoadInt64(&m.closed) == 1 && a == 0 {
-			m.munmap()
-		}
-	}()
+	defer atomic.AddInt32(&m.active, -1)
 
 	if m.size < (offset + size) {
 		return nil, ErrBoundsViolation
@@ -89,14 +92,10 @@ func (m *mmap) read(size, offset int64) ([]byte, error) {
 }
 
 func (m *mmap) write(data []byte, offset int64) error {
-	atomic.AddInt64(&m.active, 1)
-
-	defer func() {
-		a := atomic.AddInt64(&m.active, -1)
-		if atomic.LoadInt64(&m.closed) == 1 && a == 0 {
-			m.munmap()
-		}
-	}()
+	if atomic.AddInt32(&m.active, 1) < 1 {
+		return ErrMappingClosed
+	}
+	defer atomic.AddInt32(&m.active, -1)
 
 	if len(data) > MaxStep {
 		return ErrDataSizeTooLarge
@@ -112,11 +111,8 @@ func (m *mmap) write(data []byte, offset int64) error {
 }
 
 func (m *mmap) close() error {
-	atomic.StoreInt64(&m.closed, 1)
+	for atomic.CompareAndSwapInt32(&m.active, 0, -1) {
 
-	if atomic.LoadInt64(&m.active) > 1 {
-		return nil
 	}
-
 	return m.munmap()
 }
