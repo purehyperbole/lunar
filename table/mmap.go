@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"sync/atomic"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -18,6 +19,7 @@ type mmap struct {
 	fd      *os.File // file descriptor
 	size    int64    // file Size
 	active  int32    // active read or write operations
+	closed  int32    // mapping is closed
 	mapping []byte   // mmap mapping
 }
 
@@ -92,10 +94,13 @@ func (m *mmap) read(size, offset int64) ([]byte, error) {
 }
 
 func (m *mmap) write(data []byte, offset int64) error {
-	if atomic.AddInt32(&m.active, 1) < 1 {
+	atomic.AddInt32(&m.active, 1)
+	defer atomic.AddInt32(&m.active, -1)
+
+	if atomic.LoadInt32(&m.closed) == 1 {
+		fmt.Println("mapping closed")
 		return ErrMappingClosed
 	}
-	defer atomic.AddInt32(&m.active, -1)
 
 	if len(data) > MaxStep {
 		return ErrDataSizeTooLarge
@@ -111,8 +116,9 @@ func (m *mmap) write(data []byte, offset int64) error {
 }
 
 func (m *mmap) close() error {
-	for atomic.CompareAndSwapInt32(&m.active, 0, -1) {
-
+	atomic.StoreInt32(&m.closed, 1)
+	for atomic.LoadInt32(&m.active) > 0 {
+		time.Sleep(time.Millisecond)
 	}
 	return m.munmap()
 }

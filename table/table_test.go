@@ -84,7 +84,7 @@ func TestConcurrentWrite(t *testing.T) {
 
 	for i := 0; i < 8; i++ {
 		go func(w int) {
-			for x := 0; x < 100000; x++ {
+			for x := 0; x < 10000000; x++ {
 				_, err := db.Write(values[w])
 
 				if err != nil {
