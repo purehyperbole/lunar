@@ -28,14 +28,12 @@ func (db *DB) setup(datapath string) error {
 		}
 
 		rt, err = table.New(backup)
-		if err != nil {
-			return err
-		}
 	} else {
 		rt, err = table.New(datapath)
-		if err != nil {
-			return err
-		}
+	}
+
+	if err != nil {
+		return err
 	}
 
 	db.data, err = table.New(datapath)
@@ -69,7 +67,10 @@ func (db *DB) reload(rt, wt *table.Table) error {
 		h := header.Deserialize(data)
 
 		if h.KeySize() < 1 {
-			return nil
+			if !db.compaction {
+				wt.SetPosition(pos)
+			}
+			break
 		}
 
 		// skip old records
@@ -87,11 +88,7 @@ func (db *DB) reload(rt, wt *table.Table) error {
 
 		copy(key, kd)
 
-		// reserve space and insert
-		np, err := wt.Free.Reserve(h.TotalSize())
-		if err != nil {
-			return err
-		}
+		np := pos
 
 		if db.compaction {
 			data, err := rt.Read(h.TotalSize(), pos)
@@ -99,7 +96,7 @@ func (db *DB) reload(rt, wt *table.Table) error {
 				return err
 			}
 
-			err = wt.Write(data, np)
+			np, err = wt.Write(data)
 			if err != nil {
 				return err
 			}

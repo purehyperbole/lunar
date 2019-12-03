@@ -39,7 +39,6 @@ func Open(path string, opts ...func(*DB) error) (*DB, error) {
 }
 
 // Close unmaps and closes data and index files
-// TODO implement msync to ensure that data is flushed before closing!
 func (db *DB) Close() error {
 	return db.data.Close()
 }
@@ -70,17 +69,12 @@ func (db *DB) Set(key, value []byte) error {
 	h.SetKeySize(int64(len(key)))
 	h.SetDataSize(int64(len(value)))
 
-	off, err := db.data.Free.Reserve(h.TotalSize())
-	if err != nil {
-		return err
-	}
-
 	data := make([]byte, h.TotalSize())
 	copy(data[0:], header.Serialize(&h))
 	copy(data[header.HeaderSize:], key)
 	copy(data[h.DataOffset():], value)
 
-	err = db.data.Write(data, off)
+	off, err := db.data.Write(data)
 	if err != nil {
 		return err
 	}
