@@ -76,10 +76,9 @@ func (t *Table) Read(size, offset int64) ([]byte, error) {
 func (t *Table) Write(data []byte) (int64, error) {
 	ds := int64(len(data))
 
-	currentSize := t.size()
 	offset := atomic.AddInt64(&t.position, ds) - ds
 
-	if currentSize < offset+ds {
+	if t.Size() < offset+ds {
 		err := t.resize(ds, offset)
 		if err != nil {
 			return 0, err
@@ -92,6 +91,40 @@ func (t *Table) Write(data []byte) (int64, error) {
 	}
 
 	return offset, err
+}
+
+// WriteAt write to a given offset
+func (t *Table) WriteAt(data []byte, offset int64) error {
+	ds := int64(len(data))
+
+	if t.Size() < offset+ds {
+		err := t.resize(ds, offset)
+		if err != nil {
+			return err
+		}
+	}
+
+	err := (*mmap)(atomic.LoadPointer(&t.mapping)).write(data, offset)
+	for err == ErrMappingClosed {
+		err = (*mmap)(atomic.LoadPointer(&t.mapping)).write(data, offset)
+	}
+
+	return err
+}
+
+// Position returns the tables current position
+func (t *Table) Position() int64 {
+	return atomic.LoadInt64(&t.position)
+}
+
+// SetPosition updates the position of a table
+func (t *Table) SetPosition(pos int64) {
+	atomic.StoreInt64(&t.position, pos)
+}
+
+// Size the size of the table
+func (t *Table) Size() int64 {
+	return (*mmap)(atomic.LoadPointer(&t.mapping)).size
 }
 
 // Close close table file descriptor and unmap
@@ -115,15 +148,11 @@ func (t *Table) sync() error {
 	return t.fd.Sync()
 }
 
-func (t *Table) size() int64 {
-	return (*mmap)(atomic.LoadPointer(&t.mapping)).size
-}
-
 func (t *Table) resize(size, offset int64) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if t.size() > size+offset {
+	if t.Size() > size+offset {
 		return nil
 	}
 
@@ -134,7 +163,7 @@ func (t *Table) resize(size, offset int64) error {
 		return err
 	}
 
-	oldMapping := (*mmap)(t.mapping)
+	oldMapping := (*mmap)(atomic.LoadPointer(&t.mapping))
 
 	newMapping, err := newmmap(t.fd)
 	if err != nil {
@@ -151,7 +180,7 @@ func (t *Table) resize(size, offset int64) error {
 }
 
 func (t *Table) growadvise(size int64) int64 {
-	tsz := t.size()
+	tsz := t.Size()
 
 	if size < tsz {
 		size = tsz * 2

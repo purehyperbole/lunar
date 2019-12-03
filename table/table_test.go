@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -69,30 +70,20 @@ func TestConcurrentWrite(t *testing.T) {
 
 	defer os.Remove(db.fd.Name())
 
-	values := [][]byte{
-		[]byte("one"),
-		[]byte("two"),
-		[]byte("three"),
-		[]byte("four"),
-		[]byte("five"),
-		[]byte("six"),
-		[]byte("seven"),
-		[]byte("eight"),
-	}
+	wg.Add(16)
 
-	wg.Add(8)
-
-	for i := 0; i < 8; i++ {
-		go func(w int) {
-			for x := 0; x < 10000000; x++ {
-				_, err := db.Write(values[w])
+	for i := 0; i < 16; i++ {
+		go func() {
+			v := []byte(uuid.New().String())
+			for x := 0; x < 1000000; x++ {
+				_, err := db.Write(v)
 
 				if err != nil {
 					panic(err)
 				}
 			}
 			wg.Done()
-		}(i)
+		}()
 	}
 
 	wg.Wait()

@@ -2,9 +2,13 @@
 
 A simple embedded, persistent key value store for go.
 
-The implementation uses a radix tree as an index, with index and value data stored as seperate files.
+The index makes use of a lock free radix tree, which is kept only in memory.
 
-Both index and data files are memory mapped (MMAP).
+Data persistence is handled via a memory mapped file (MMAP).
+
+# Motivation
+
+This project was built for fun and learning. It probably has lots of bugs and shouldn't be used for any real workloads (yet!) 
 
 # Installation
 
@@ -49,11 +53,10 @@ err := db.Set([]byte("myKey1234"), []byte(`{"status": "ok"}`))
 # Features/Wishlist
 
 - [x] Persistence
-- [x] Compressed tree nodes (radix)
-- [x] Sync mmap data on resize
+- [x] Lock free index (Radix)
+- [ ] Data file compaction
 - [ ] Configurable sync on write options
 - [ ] Transactions (MVCC)
-- [ ] Data file compaction
 
 ## Versioning
 
